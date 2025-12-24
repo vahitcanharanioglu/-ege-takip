@@ -14,11 +14,12 @@ export default function App() {
   const [cashMovements, setCashMovements] = useState([]);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(() => getTurkeyDate());
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   
   const [showAddSupplier, setShowAddSupplier] = useState(false);
+  const [showEditSupplier, setShowEditSupplier] = useState(null);
   const [showAddTransaction, setShowAddTransaction] = useState(null);
   const [showAddReport, setShowAddReport] = useState(false);
   const [showEditReport, setShowEditReport] = useState(false);
@@ -29,28 +30,45 @@ export default function App() {
   
   const [loginForm, setLoginForm] = useState({ username: '', password: '', rememberMe: false });
   const [supplierForm, setSupplierForm] = useState({ name: '', phone: '', notes: '' });
-  const [transactionForm, setTransactionForm] = useState({ amount: '', date: new Date().toISOString().split('T')[0], description: '', payment_method: 'nakit', invoice: null });
-  const [reportForm, setReportForm] = useState({ date: new Date().toISOString().split('T')[0], credit_card: '', cash: '', meal_cards: '', actual_cash: '', notes: '' });
+  const [transactionForm, setTransactionForm] = useState({ amount: '', date: getTurkeyDate(), description: '', payment_method: 'nakit', invoice: null });
+  const [reportForm, setReportForm] = useState({ date: getTurkeyDate(), credit_card: '', cash: '', meal_cards: '', actual_cash: '', notes: '' });
   const [expensesList, setExpensesList] = useState([]);
   const [newExpense, setNewExpense] = useState({ description: '', amount: '' });
-  const [cashMovementForm, setCashMovementForm] = useState({ amount: '', description: '', date: new Date().toISOString().split('T')[0] });
+  const [cashMovementForm, setCashMovementForm] = useState({ amount: '', description: '', date: getTurkeyDate() });
   const [error, setError] = useState('');
   const [uploadingInvoice, setUploadingInvoice] = useState(false);
 
+  // Türkiye saati (UTC+3)
+  function getTurkeyDate() {
+    const now = new Date();
+    const turkeyTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Istanbul' }));
+    return turkeyTime.toISOString().split('T')[0];
+  }
+
+  function getTurkeyDateTime() {
+    return new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
+  }
+
   const formatDateTR = (dateStr) => {
     const d = new Date(dateStr);
-    return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear().toString().slice(-2)}`;
+    return `${d.getDate().toString().padStart(2,'0')}.${(d.getMonth()+1).toString().padStart(2,'0')}.${d.getFullYear()}`;
+  };
+
+  const formatDateInput = (dateStr) => {
+    // Avrupa formatında göster: dd.mm.yyyy
+    const d = new Date(dateStr);
+    return `${d.getDate().toString().padStart(2,'0')}.${(d.getMonth()+1).toString().padStart(2,'0')}.${d.getFullYear()}`;
   };
 
   const formatTimeTR = (timestamp) => {
     if (!timestamp) return '';
     const d = new Date(timestamp);
-    return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+    return d.toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul', hour: '2-digit', minute: '2-digit' });
   };
 
   const formatMoney = (amt) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(amt || 0);
 
-  // Beni Hatırla - Sayfa yüklendiğinde kontrol et
+  // Beni Hatırla
   useEffect(() => {
     const checkRememberedUser = async () => {
       try {
@@ -88,6 +106,13 @@ export default function App() {
       loadCashMovements();
     }
   }, [user]);
+
+  // Gün Sonu ekranına girildiğinde bugüne ayarla
+  useEffect(() => {
+    if (screen === 'gunsonu') {
+      setSelectedDate(getTurkeyDate());
+    }
+  }, [screen]);
 
   const loadBusinesses = async () => {
     try {
@@ -164,8 +189,6 @@ export default function App() {
       } else {
         setUser(data);
         setScreen('menu');
-        
-        // Beni Hatırla seçiliyse kaydet
         if (loginForm.rememberMe) {
           localStorage.setItem('ege_takip_user', JSON.stringify(data));
         }
@@ -185,26 +208,18 @@ export default function App() {
     localStorage.removeItem('ege_takip_user');
   };
 
-  // Fatura Yükleme
   const uploadInvoice = async (file) => {
     if (!file) return null;
-    
     setUploadingInvoice(true);
     try {
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
       const filePath = `${selectedBusiness.id}/${fileName}`;
       
-      const { data, error } = await supabase.storage
-        .from('invoices')
-        .upload(filePath, file);
-      
+      const { data, error } = await supabase.storage.from('invoices').upload(filePath, file);
       if (error) throw error;
       
-      const { data: urlData } = supabase.storage
-        .from('invoices')
-        .getPublicUrl(filePath);
-      
+      const { data: urlData } = supabase.storage.from('invoices').getPublicUrl(filePath);
       setUploadingInvoice(false);
       return urlData.publicUrl;
     } catch (e) {
@@ -233,6 +248,7 @@ export default function App() {
   
   const getTotalDebt = () => getBusinessSuppliers().reduce((s, sup) => s + getSupplierBalance(sup.id), 0);
 
+  // Supplier CRUD
   const handleAddSupplier = async () => {
     if (!supplierForm.name || !selectedBusiness) return;
     setLoading(true);
@@ -251,6 +267,34 @@ export default function App() {
     setSupplierForm({ name: '', phone: '', notes: '' });
     setShowAddSupplier(false);
     setLoading(false);
+  };
+
+  // Admin toptancı düzenleme
+  const handleEditSupplier = async () => {
+    if (!showEditSupplier || !supplierForm.name) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('suppliers')
+        .update({ name: supplierForm.name, phone: supplierForm.phone, notes: supplierForm.notes })
+        .eq('id', showEditSupplier.id);
+      
+      if (error) throw error;
+      setSuppliers(suppliers.map(s => s.id === showEditSupplier.id ? { ...s, name: supplierForm.name, phone: supplierForm.phone, notes: supplierForm.notes } : s));
+      if (selectedSupplier?.id === showEditSupplier.id) {
+        setSelectedSupplier({ ...selectedSupplier, name: supplierForm.name, phone: supplierForm.phone, notes: supplierForm.notes });
+      }
+    } catch (e) {
+      console.error('Edit supplier error:', e);
+    }
+    setSupplierForm({ name: '', phone: '', notes: '' });
+    setShowEditSupplier(null);
+    setLoading(false);
+  };
+
+  const openEditSupplier = (supplier) => {
+    setSupplierForm({ name: supplier.name, phone: supplier.phone || '', notes: supplier.notes || '' });
+    setShowEditSupplier(supplier);
   };
 
   const handleAddTransaction = async () => {
@@ -283,7 +327,7 @@ export default function App() {
     } catch (e) {
       console.error('Add transaction error:', e);
     }
-    setTransactionForm({ amount: '', date: new Date().toISOString().split('T')[0], description: '', payment_method: 'nakit', invoice: null });
+    setTransactionForm({ amount: '', date: getTurkeyDate(), description: '', payment_method: 'nakit', invoice: null });
     setShowAddTransaction(null);
     setLoading(false);
   };
@@ -316,7 +360,7 @@ export default function App() {
     } catch (e) {
       console.error('Edit transaction error:', e);
     }
-    setTransactionForm({ amount: '', date: new Date().toISOString().split('T')[0], description: '', payment_method: 'nakit', invoice: null });
+    setTransactionForm({ amount: '', date: getTurkeyDate(), description: '', payment_method: 'nakit', invoice: null });
     setShowEditTransaction(null);
     setLoading(false);
   };
@@ -337,6 +381,13 @@ export default function App() {
 
   const handleAddReport = async () => {
     if (!selectedBusiness) return;
+    
+    // Gider kontrolü - en az bir gider girilmeli
+    if (expensesList.length === 0) {
+      alert('⚠️ En az bir gider girmelisiniz!');
+      return;
+    }
+    
     setLoading(true);
     try {
       const { data: reportData, error: reportError } = await supabase
@@ -371,7 +422,7 @@ export default function App() {
       alert('Rapor eklenirken hata: ' + e.message);
     }
     
-    setReportForm({ date: new Date().toISOString().split('T')[0], credit_card: '', cash: '', meal_cards: '', actual_cash: '', notes: '' });
+    setReportForm({ date: getTurkeyDate(), credit_card: '', cash: '', meal_cards: '', actual_cash: '', notes: '' });
     setExpensesList([]);
     setShowAddReport(false);
     setLoading(false);
@@ -381,6 +432,13 @@ export default function App() {
     if (!selectedBusiness) return;
     const currentReport = getReportByDate(selectedBusiness.id, selectedDate);
     if (!currentReport) return;
+    
+    // Gider kontrolü
+    if (expensesList.length === 0) {
+      alert('⚠️ En az bir gider girmelisiniz!');
+      return;
+    }
+    
     setLoading(true);
 
     try {
@@ -410,7 +468,7 @@ export default function App() {
       console.error('Edit report error:', e);
     }
 
-    setReportForm({ date: new Date().toISOString().split('T')[0], credit_card: '', cash: '', meal_cards: '', actual_cash: '', notes: '' });
+    setReportForm({ date: getTurkeyDate(), credit_card: '', cash: '', meal_cards: '', actual_cash: '', notes: '' });
     setExpensesList([]);
     setShowEditReport(false);
     setLoading(false);
@@ -437,7 +495,7 @@ export default function App() {
     } catch (e) {
       console.error('Add cash movement error:', e);
     }
-    setCashMovementForm({ amount: '', description: '', date: new Date().toISOString().split('T')[0] });
+    setCashMovementForm({ amount: '', description: '', date: getTurkeyDate() });
     setShowAddCashMovement(null);
     setLoading(false);
   };
@@ -482,20 +540,33 @@ export default function App() {
   const getExpTotal = (exps) => (exps || []).reduce((s, e) => s + Number(e.amount), 0);
   const calcCashDiff = (r) => Number(r.actual_cash) - (Number(r.cash) - getExpTotal(r.expenses));
 
+  // Günlük Özet - Giderlerle birlikte
   const getDailySummary = (date) => {
     const reports = dailyReports.filter(r => r.date === date);
-    let totalCreditCard = 0, totalCash = 0, totalMealCards = 0, businessSummary = [];
+    let totalCreditCard = 0, totalCash = 0, totalMealCards = 0, totalExpenses = 0, businessSummary = [];
     businesses.forEach(b => {
       const report = reports.find(r => r.business_id === b.id);
       if (report) {
-        totalCreditCard += Number(report.credit_card); totalCash += Number(report.cash); totalMealCards += Number(report.meal_cards);
-        businessSummary.push({ name: b.name, credit_card: Number(report.credit_card), cash: Number(report.cash), meal_cards: Number(report.meal_cards), total: Number(report.credit_card) + Number(report.cash) + Number(report.meal_cards) });
+        const expenses = getExpTotal(report.expenses);
+        totalCreditCard += Number(report.credit_card); 
+        totalCash += Number(report.cash); 
+        totalMealCards += Number(report.meal_cards);
+        totalExpenses += expenses;
+        businessSummary.push({ 
+          name: b.name, 
+          credit_card: Number(report.credit_card), 
+          cash: Number(report.cash), 
+          meal_cards: Number(report.meal_cards), 
+          expenses: expenses,
+          total: Number(report.credit_card) + Number(report.cash) + Number(report.meal_cards),
+          net: Number(report.credit_card) + Number(report.cash) + Number(report.meal_cards) - expenses
+        });
       }
     });
-    return { totalCreditCard, totalCash, totalMealCards, businessSummary, total: totalCreditCard + totalCash + totalMealCards };
+    const total = totalCreditCard + totalCash + totalMealCards;
+    return { totalCreditCard, totalCash, totalMealCards, totalExpenses, businessSummary, total, netTotal: total - totalExpenses };
   };
 
-  // İlk yükleme ekranı
   if (initialLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-600 to-blue-700">
@@ -601,7 +672,7 @@ export default function App() {
     );
   }
 
-  // ÖZET
+  // ÖZET - Giderlerle birlikte
   if (screen === 'ozet' && user?.role === 'admin') {
     const summary = getDailySummary(selectedDate);
     return (
@@ -612,20 +683,63 @@ export default function App() {
           <div className="bg-white rounded-xl shadow p-4 mb-6">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <button onClick={() => changeDate(-1)} className="bg-purple-100 text-purple-700 px-4 py-2 rounded-lg font-semibold">← Önceki</button>
-              <div className="text-center"><div className="text-2xl font-bold text-gray-800 border-2 border-gray-200 rounded-lg px-6 py-3 bg-gray-50">{formatDateTR(selectedDate)}</div><input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="mt-2 text-sm border rounded-lg px-3 py-1" /></div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-800 border-2 border-gray-200 rounded-lg px-6 py-3 bg-gray-50">{formatDateTR(selectedDate)}</div>
+                <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="mt-2 text-sm border rounded-lg px-3 py-1" />
+              </div>
               <button onClick={() => changeDate(1)} className="bg-purple-100 text-purple-700 px-4 py-2 rounded-lg font-semibold">Sonraki →</button>
             </div>
-            <div className="flex gap-2 mt-4 justify-center"><button onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])} className="bg-purple-500 text-white px-4 py-2 rounded-lg text-sm">Bugün</button></div>
+            <div className="flex gap-2 mt-4 justify-center"><button onClick={() => setSelectedDate(getTurkeyDate())} className="bg-purple-500 text-white px-4 py-2 rounded-lg text-sm">Bugün</button></div>
           </div>
-          <div className="bg-gradient-to-r from-purple-500 to-purple-700 rounded-2xl p-6 text-white mb-6"><p className="text-white/80 text-sm">Toplam Ciro</p><p className="text-4xl font-bold">{formatMoney(summary.total)}</p></div>
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="bg-blue-50 p-4 rounded-xl border-2 border-blue-200 text-center"><p className="text-blue-600 font-semibold text-sm">💳 Kredi Kartı</p><p className="text-xl font-bold">{formatMoney(summary.totalCreditCard)}</p></div>
-            <div className="bg-green-50 p-4 rounded-xl border-2 border-green-200 text-center"><p className="text-green-600 font-semibold text-sm">💵 Nakit</p><p className="text-xl font-bold">{formatMoney(summary.totalCash)}</p></div>
-            <div className="bg-orange-50 p-4 rounded-xl border-2 border-orange-200 text-center"><p className="text-orange-600 font-semibold text-sm">🎫 Yemek Kartı</p><p className="text-xl font-bold">{formatMoney(summary.totalMealCards)}</p></div>
+          
+          {/* Toplam Ciro ve Net Ciro */}
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="bg-gradient-to-r from-purple-500 to-purple-700 rounded-2xl p-6 text-white">
+              <p className="text-white/80 text-sm">Toplam Ciro</p>
+              <p className="text-3xl font-bold">{formatMoney(summary.total)}</p>
+            </div>
+            <div className="bg-gradient-to-r from-green-500 to-green-700 rounded-2xl p-6 text-white">
+              <p className="text-white/80 text-sm">Net Ciro (Giderler Düşülmüş)</p>
+              <p className="text-3xl font-bold">{formatMoney(summary.netTotal)}</p>
+            </div>
           </div>
+          
+          <div className="grid grid-cols-4 gap-3 mb-6">
+            <div className="bg-blue-50 p-4 rounded-xl border-2 border-blue-200 text-center">
+              <p className="text-blue-600 font-semibold text-xs">💳 Kredi Kartı</p>
+              <p className="text-lg font-bold">{formatMoney(summary.totalCreditCard)}</p>
+            </div>
+            <div className="bg-green-50 p-4 rounded-xl border-2 border-green-200 text-center">
+              <p className="text-green-600 font-semibold text-xs">💵 Nakit</p>
+              <p className="text-lg font-bold">{formatMoney(summary.totalCash)}</p>
+            </div>
+            <div className="bg-orange-50 p-4 rounded-xl border-2 border-orange-200 text-center">
+              <p className="text-orange-600 font-semibold text-xs">🎫 Yemek Kartı</p>
+              <p className="text-lg font-bold">{formatMoney(summary.totalMealCards)}</p>
+            </div>
+            <div className="bg-red-50 p-4 rounded-xl border-2 border-red-200 text-center">
+              <p className="text-red-600 font-semibold text-xs">📉 Toplam Gider</p>
+              <p className="text-lg font-bold">{formatMoney(summary.totalExpenses)}</p>
+            </div>
+          </div>
+          
           <div className="bg-white rounded-xl shadow p-6">
             <h3 className="text-lg font-bold text-gray-800 mb-4">İşletme Detayları</h3>
-            {summary.businessSummary.length > 0 ? (<div className="space-y-3">{summary.businessSummary.map((b, i) => (<div key={i} className="p-4 bg-gray-50 rounded-lg"><div className="flex justify-between items-center mb-2"><p className="font-bold">{b.name}</p><p className="font-bold text-purple-600">{formatMoney(b.total)}</p></div><div className="grid grid-cols-3 gap-2 text-sm"><div>Kredi Kartı: {formatMoney(b.credit_card)}</div><div>Nakit: {formatMoney(b.cash)}</div><div>Yemek Kartı: {formatMoney(b.meal_cards)}</div></div></div>))}</div>) : (<p className="text-center text-gray-500 py-8">Rapor yok</p>)}
+            {summary.businessSummary.length > 0 ? (<div className="space-y-3">{summary.businessSummary.map((b, i) => (<div key={i} className="p-4 bg-gray-50 rounded-lg">
+              <div className="flex justify-between items-center mb-2">
+                <p className="font-bold">{b.name}</p>
+                <div className="text-right">
+                  <p className="font-bold text-purple-600">{formatMoney(b.total)}</p>
+                  <p className="text-sm text-green-600">Net: {formatMoney(b.net)}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-4 gap-2 text-sm">
+                <div>💳 {formatMoney(b.credit_card)}</div>
+                <div>💵 {formatMoney(b.cash)}</div>
+                <div>🎫 {formatMoney(b.meal_cards)}</div>
+                <div className="text-red-600">📉 {formatMoney(b.expenses)}</div>
+              </div>
+            </div>))}</div>) : (<p className="text-center text-gray-500 py-8">Rapor yok</p>)}
           </div>
         </main>
       </div>
@@ -703,7 +817,7 @@ export default function App() {
       );
     }
     const currentReport = getReportByDate(selectedBusiness.id, selectedDate);
-    const isToday = selectedDate === new Date().toISOString().split('T')[0];
+    const isToday = selectedDate === getTurkeyDate();
     return (
       <div className="min-h-screen bg-gray-100">
         <LoadingOverlay />
@@ -715,7 +829,7 @@ export default function App() {
               <div className="text-center"><div className="text-2xl font-bold border-2 rounded-lg px-6 py-3 bg-gray-50">{formatDateTR(selectedDate)}</div><input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="mt-2 text-sm border rounded-lg px-3 py-1" /></div>
               <button onClick={() => changeDate(1)} className="bg-blue-100 text-blue-700 px-4 py-2 rounded-lg font-semibold">→</button>
             </div>
-            <div className="flex gap-2 mt-4 justify-center"><button onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])} className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm">Bugün</button></div>
+            <div className="flex gap-2 mt-4 justify-center"><button onClick={() => setSelectedDate(getTurkeyDate())} className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm">Bugün</button></div>
           </div>
           {(isToday || user?.role === 'admin') && !currentReport && (<button onClick={() => { setReportForm({...reportForm, date: selectedDate}); setExpensesList([]); setShowAddReport(true); }} className="w-full bg-gradient-to-r from-red-500 to-red-600 text-white py-4 rounded-xl font-semibold mb-6">+ Rapor Ekle</button>)}
           {currentReport ? (
@@ -738,8 +852,8 @@ export default function App() {
           ) : (<div className="bg-white rounded-xl shadow p-12 text-center"><p className="text-5xl mb-4">📋</p><p className="text-xl text-gray-500">{formatDateTR(selectedDate)} - Kayıt yok</p></div>)}
           <div className="mt-6"><h3 className="text-lg font-bold mb-4">Son Raporlar</h3><div className="space-y-2">{getBusinessReports(selectedBusiness.id).slice(0, 5).map(r => (<button key={r.id} onClick={() => setSelectedDate(r.date)} className={`w-full text-left p-4 rounded-lg ${selectedDate === r.date ? 'bg-blue-100 border-2 border-blue-500' : 'bg-white'}`}><div className="flex justify-between"><span className="font-semibold">{formatDateTR(r.date)}</span><span>{formatMoney(Number(r.credit_card) + Number(r.cash) + Number(r.meal_cards))}</span></div></button>))}</div></div>
         </main>
-        {showAddReport && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-lg my-8"><h3 className="text-xl font-bold mb-4 text-red-600">📊 Gün Sonu - {selectedBusiness.name}</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tarih</label><div className="text-lg font-bold border-2 rounded-lg px-4 py-2 bg-gray-50">{formatDateTR(reportForm.date)}</div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">💳 Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div><div><label className="text-sm font-medium">💵 Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">🎫 Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div><div><label className="text-sm font-medium">💰 Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div></div><div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-3">📉 Giderler</label><div className="flex gap-2 mb-3"><input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} className="flex-1 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-red-500 text-white px-4 py-2 rounded-lg">+</button></div>{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400">✕</button></div></div>))}<div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Toplam:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div></div><div><label className="text-sm font-medium">📝 Notlar</label><textarea value={reportForm.notes} onChange={(e) => setReportForm({...reportForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowAddReport(false); setExpensesList([]); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddReport} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Kaydet</button></div></div></div>)}
-        {showEditReport && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-lg my-8"><h3 className="text-xl font-bold mb-4 text-blue-600">✏️ Rapor Düzenle</h3><div className="space-y-4"><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">💳 Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">💵 Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">🎫 Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">💰 Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div></div><div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-3">📉 Giderler</label><div className="flex gap-2 mb-3"><input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} className="flex-1 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-red-500 text-white px-4 py-2 rounded-lg">+</button></div>{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400">✕</button></div></div>))}<div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Toplam:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowEditReport(false); setExpensesList([]); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleEditReport} className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
+        {showAddReport && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-lg my-8"><h3 className="text-xl font-bold mb-4 text-red-600">📊 Gün Sonu - {selectedBusiness.name}</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tarih</label><div className="text-lg font-bold border-2 rounded-lg px-4 py-2 bg-gray-50">{formatDateTR(reportForm.date)}</div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">💳 Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div><div><label className="text-sm font-medium">💵 Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">🎫 Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div><div><label className="text-sm font-medium">💰 Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div></div><div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-1">📉 Giderler <span className="text-red-500">*</span></label><p className="text-xs text-red-500 mb-3">En az bir gider girmelisiniz!</p><div className="flex gap-2 mb-3"><input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} className="flex-1 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-red-500 text-white px-4 py-2 rounded-lg">+</button></div>{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400">✕</button></div></div>))}<div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Toplam:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div></div><div><label className="text-sm font-medium">📝 Notlar</label><textarea value={reportForm.notes} onChange={(e) => setReportForm({...reportForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowAddReport(false); setExpensesList([]); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddReport} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Kaydet</button></div></div></div>)}
+        {showEditReport && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-lg my-8"><h3 className="text-xl font-bold mb-4 text-blue-600">✏️ Rapor Düzenle</h3><div className="space-y-4"><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">💳 Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">💵 Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">🎫 Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">💰 Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div></div><div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-1">📉 Giderler <span className="text-red-500">*</span></label><p className="text-xs text-red-500 mb-3">En az bir gider girmelisiniz!</p><div className="flex gap-2 mb-3"><input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} className="flex-1 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-red-500 text-white px-4 py-2 rounded-lg">+</button></div>{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400">✕</button></div></div>))}<div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Toplam:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowEditReport(false); setExpensesList([]); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleEditReport} className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
         <DeleteConfirmModal />
       </div>
     );
@@ -776,7 +890,15 @@ export default function App() {
             </div>
             <div className="bg-white rounded-xl shadow p-6">
               {selectedSupplier ? (<>
-                <div className="flex justify-between items-start mb-4"><div><h2 className="text-xl font-bold">{selectedSupplier.name}</h2>{selectedSupplier.phone && <p className="text-gray-500">{selectedSupplier.phone}</p>}</div>{user?.role === 'admin' && <button onClick={() => initiateDelete('supplier', selectedSupplier.id, selectedSupplier.name)} className="bg-red-100 text-red-600 px-3 py-1 rounded-lg text-sm">🗑️</button>}</div>
+                <div className="flex justify-between items-start mb-4">
+                  <div><h2 className="text-xl font-bold">{selectedSupplier.name}</h2>{selectedSupplier.phone && <p className="text-gray-500">{selectedSupplier.phone}</p>}</div>
+                  {user?.role === 'admin' && (
+                    <div className="flex gap-1">
+                      <button onClick={() => openEditSupplier(selectedSupplier)} className="bg-blue-100 text-blue-600 px-3 py-1 rounded-lg text-sm">✏️</button>
+                      <button onClick={() => initiateDelete('supplier', selectedSupplier.id, selectedSupplier.name)} className="bg-red-100 text-red-600 px-3 py-1 rounded-lg text-sm">🗑️</button>
+                    </div>
+                  )}
+                </div>
                 <div className="flex gap-2 mb-4"><button onClick={() => setShowAddTransaction('ALIM')} className="flex-1 bg-red-500 text-white py-3 rounded-lg font-semibold">+ Mal Alımı</button><button onClick={() => setShowAddTransaction('ODEME')} className="flex-1 bg-green-500 text-white py-3 rounded-lg font-semibold">+ Ödeme</button></div>
                 <div className="border-t pt-4"><h3 className="font-semibold mb-3">İşlemler</h3><div className="space-y-2 max-h-80 overflow-y-auto">
                   {transactions.filter(t => t.supplier_id === selectedSupplier.id).map(tx => (
@@ -803,9 +925,19 @@ export default function App() {
             </div>
           </div>
         </main>
+        
+        {/* Add Supplier */}
         {showAddSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-blue-600">Yeni Toptancı</h3><div className="space-y-4"><div><label className="text-sm font-medium">Ad *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Telefon</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Not</label><textarea value={supplierForm.notes} onChange={(e) => setSupplierForm({...supplierForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowAddSupplier(false)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddSupplier} className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold">Ekle</button></div></div></div>)}
+        
+        {/* Edit Supplier (Admin) */}
+        {showEditSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-blue-600">✏️ Toptancı Düzenle</h3><div className="space-y-4"><div><label className="text-sm font-medium">Ad *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Telefon</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Not</label><textarea value={supplierForm.notes} onChange={(e) => setSupplierForm({...supplierForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowEditSupplier(null); setSupplierForm({ name: '', phone: '', notes: '' }); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleEditSupplier} className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
+        
+        {/* Add Transaction */}
         {showAddTransaction && selectedSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-md my-8"><h3 className={`text-xl font-bold mb-4 ${showAddTransaction === 'ALIM' ? 'text-red-600' : 'text-green-600'}`}>{showAddTransaction === 'ALIM' ? '📦 Mal Alımı' : '💰 Ödeme'}</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tutar *</label><input type="number" value={transactionForm.amount} onChange={(e) => setTransactionForm({...transactionForm, amount: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div><div><label className="text-sm font-medium">Tarih *</label><input type="date" value={transactionForm.date} onChange={(e) => setTransactionForm({...transactionForm, date: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /><p className="text-sm text-gray-600 mt-1">{formatDateTR(transactionForm.date)}</p></div><div><label className="text-sm font-medium">Ödeme Biçimi</label><select value={transactionForm.payment_method} onChange={(e) => setTransactionForm({...transactionForm, payment_method: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg"><option value="nakit">💵 Nakit</option><option value="kredi_karti">💳 Kredi Kartı</option><option value="cek">📄 Çek</option><option value="senet">📃 Senet</option></select></div><div><label className="text-sm font-medium">Açıklama</label><input type="text" value={transactionForm.description} onChange={(e) => setTransactionForm({...transactionForm, description: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">📄 Fatura Ekle</label><input type="file" accept="image/*,.pdf" onChange={(e) => setTransactionForm({...transactionForm, invoice: e.target.files[0]})} className="w-full px-4 py-2 border-2 rounded-lg text-sm" />{transactionForm.invoice && <p className="text-xs text-green-600 mt-1">✅ {transactionForm.invoice.name}</p>}{uploadingInvoice && <p className="text-xs text-blue-600 mt-1">⏳ Yükleniyor...</p>}</div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowAddTransaction(null)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddTransaction} disabled={loading || uploadingInvoice} className={`flex-1 text-white py-3 rounded-lg font-semibold ${showAddTransaction === 'ALIM' ? 'bg-red-500' : 'bg-green-500'}`}>Kaydet</button></div></div></div>)}
+        
+        {/* Edit Transaction */}
         {showEditTransaction && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-blue-600">✏️ İşlem Düzenle</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tutar</label><input type="number" value={transactionForm.amount} onChange={(e) => setTransactionForm({...transactionForm, amount: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Ödeme Biçimi</label><select value={transactionForm.payment_method} onChange={(e) => setTransactionForm({...transactionForm, payment_method: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg"><option value="nakit">💵 Nakit</option><option value="kredi_karti">💳 Kredi Kartı</option><option value="cek">📄 Çek</option><option value="senet">📃 Senet</option></select></div><div><label className="text-sm font-medium">Açıklama</label><input type="text" value={transactionForm.description} onChange={(e) => setTransactionForm({...transactionForm, description: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">📄 Yeni Fatura</label><input type="file" accept="image/*,.pdf" onChange={(e) => setTransactionForm({...transactionForm, invoice: e.target.files[0]})} className="w-full px-4 py-2 border-2 rounded-lg text-sm" />{showEditTransaction.invoice_url && !transactionForm.invoice && <p className="text-xs text-blue-600 mt-1">📄 Mevcut fatura var</p>}{transactionForm.invoice && <p className="text-xs text-green-600 mt-1">✅ {transactionForm.invoice.name}</p>}</div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowEditTransaction(null)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleEditTransaction} disabled={loading || uploadingInvoice} className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
+        
         <DeleteConfirmModal />
       </div>
     );
