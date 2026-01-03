@@ -62,22 +62,6 @@ export default function App() {
 
   const formatMoney = (amt) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(amt || 0);
 
-  // Aynı gün kontrolü
-  const isSameDay = (dateStr) => dateStr === getTurkeyDate();
-
-  // Düzenleme yetkisi: Admin her zaman, personel sadece aynı gün
-  const canEdit = (dateStr) => {
-    if (user?.role === 'admin') return true;
-    return isSameDay(dateStr);
-  };
-
-  // Kasa hareketlerine erişim yetkisi (Admin + Aylin + Yüksel + Çağsel)
-  const canAccessKasa = () => {
-    if (user?.role === 'admin') return true;
-    const kasaYetkiliUsers = ['aylin', 'yuksel', 'cagseldeniztekel'];
-    return kasaYetkiliUsers.includes(user?.username?.toLowerCase());
-  };
-
   useEffect(() => {
     const checkRememberedUser = async () => {
       try {
@@ -353,16 +337,14 @@ export default function App() {
           amount: parseFloat(transactionForm.amount),
           payment_method: transactionForm.payment_method,
           description: transactionForm.description,
-          invoice_url: invoiceUrl,
-          updated_by_name: user.full_name,
-          updated_at: new Date().toISOString()
+          invoice_url: invoiceUrl
         })
         .eq('id', showEditTransaction.id);
       
       if (error) throw error;
       setTransactions(transactions.map(t => 
         t.id === showEditTransaction.id 
-          ? { ...t, amount: parseFloat(transactionForm.amount), payment_method: transactionForm.payment_method, description: transactionForm.description, invoice_url: invoiceUrl, updated_by_name: user.full_name } 
+          ? { ...t, amount: parseFloat(transactionForm.amount), payment_method: transactionForm.payment_method, description: transactionForm.description, invoice_url: invoiceUrl } 
           : t
       ));
     } catch (e) {
@@ -450,9 +432,7 @@ export default function App() {
         cash: parseFloat(reportForm.cash) || 0,
         meal_cards: parseFloat(reportForm.meal_cards) || 0,
         actual_cash: parseFloat(reportForm.actual_cash) || 0,
-        notes: reportForm.notes,
-        updated_by_name: user.full_name,
-        updated_at: new Date().toISOString()
+        notes: reportForm.notes
       }).eq('id', currentReport.id);
 
       await supabase.from('expenses').delete().eq('daily_report_id', currentReport.id);
@@ -467,7 +447,7 @@ export default function App() {
       setDailyReports(dailyReports.map(r => r.id === currentReport.id ? {
         ...r, credit_card: parseFloat(reportForm.credit_card) || 0, cash: parseFloat(reportForm.cash) || 0,
         meal_cards: parseFloat(reportForm.meal_cards) || 0, actual_cash: parseFloat(reportForm.actual_cash) || 0,
-        notes: reportForm.notes, expenses: newExpenses, updated_by_name: user.full_name
+        notes: reportForm.notes, expenses: newExpenses
       } : r));
     } catch (e) {
       console.error('Edit report error:', e);
@@ -690,12 +670,10 @@ export default function App() {
           <div className="space-y-4">
             <button onClick={() => setScreen('toptanci')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-red-500"><span className="text-4xl">📦</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Toptancı Ödemeleri</p><p className="text-gray-500">Mal alımı ve ödeme takibi</p></div></button>
             <button onClick={() => setScreen('gunsonu')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-blue-500"><span className="text-4xl">📊</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Gün Sonu</p><p className="text-gray-500">Günlük ciro ve kasa raporu</p></div></button>
-            {canAccessKasa() && (
+            {user?.role === 'admin' && (<>
               <button onClick={() => setScreen('kasa')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-green-500"><span className="text-4xl">💰</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Kasa Hareketleri</p><p className="text-gray-500">Ödeme ve gelen para takibi</p></div></button>
-            )}
-            {user?.role === 'admin' && (
               <button onClick={() => setScreen('ozet')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-purple-500"><span className="text-4xl">📈</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Günlük Özet</p><p className="text-gray-500">Tüm işletmelerin toplamı</p></div></button>
-            )}
+            </>)}
           </div>
           <button onClick={handleLogout} className="w-full mt-8 text-white/80 hover:text-white py-2 transition">Çıkış Yap</button>
         </div>
@@ -777,7 +755,7 @@ export default function App() {
   }
 
   // KASA
-  if (screen === 'kasa' && canAccessKasa()) {
+  if (screen === 'kasa' && user?.role === 'admin') {
     const todayMovements = cashMovements.filter(c => c.date === selectedDate);
     const totalIn = todayMovements.filter(c => c.type === 'IN').reduce((s, c) => s + Number(c.amount), 0);
     const totalOut = todayMovements.filter(c => c.type === 'OUT').reduce((s, c) => s + Number(c.amount), 0);
@@ -807,16 +785,8 @@ export default function App() {
               {todayMovements.map(m => (
                 <div key={m.id} className={`p-4 rounded-lg border-l-4 ${m.type === 'IN' ? 'bg-green-50 border-l-green-500' : 'bg-red-50 border-l-red-500'}`}>
                   <div className="flex justify-between items-start">
-                    <div>
-                      <p className={`font-semibold ${m.type === 'IN' ? 'text-green-600' : 'text-red-600'}`}>{m.type === 'IN' ? '📥 Gelen' : '📤 Ödeme'}</p>
-                      <p className="text-sm text-gray-600">{m.description}</p>
-                      <p className="text-xs text-gray-500">{formatTimeTR(m.created_at)} - 👤 {m.fullName}</p>
-                      {m.updated_by_name && <p className="text-xs text-orange-500">✏️ Düzenleyen: {m.updated_by_name}</p>}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <p className={`text-xl font-bold ${m.type === 'IN' ? 'text-green-600' : 'text-red-600'}`}>{m.type === 'IN' ? '+' : '-'}{formatMoney(m.amount)}</p>
-                      {canEdit(m.date) && <button onClick={() => initiateDelete('cashMovement', m.id, m.description)} className="bg-red-100 text-red-500 p-1 rounded">🗑️</button>}
-                    </div>
+                    <div><p className={`font-semibold ${m.type === 'IN' ? 'text-green-600' : 'text-red-600'}`}>{m.type === 'IN' ? '📥 Gelen' : '📤 Ödeme'}</p><p className="text-sm text-gray-600">{m.description}</p><p className="text-xs text-gray-500">{formatTimeTR(m.created_at)} - {m.fullName}</p></div>
+                    <div className="flex items-center gap-2"><p className={`text-xl font-bold ${m.type === 'IN' ? 'text-green-600' : 'text-red-600'}`}>{m.type === 'IN' ? '+' : '-'}{formatMoney(m.amount)}</p><button onClick={() => initiateDelete('cashMovement', m.id, m.description)} className="bg-red-100 text-red-500 p-1 rounded">🗑️</button></div>
                   </div>
                 </div>
               ))}
@@ -874,15 +844,10 @@ export default function App() {
           {currentReport ? (
             <div className="bg-white rounded-xl shadow p-6">
               <div className="flex justify-between items-start mb-4 flex-wrap gap-2">
-                <div>
-                  <p className="text-2xl font-bold">{formatDateTR(currentReport.date)}</p>
-                  <p className="text-sm text-gray-500">Ciro: {formatMoney(Number(currentReport.credit_card) + Number(currentReport.cash) + Number(currentReport.meal_cards))}</p>
-                  <p className="text-xs text-blue-600 mt-1">👤 {currentReport.fullName} - {formatTimeTR(currentReport.created_at)}</p>
-                  {currentReport.updated_by_name && <p className="text-xs text-orange-500">✏️ Düzenleyen: {currentReport.updated_by_name}</p>}
-                </div>
+                <div><p className="text-2xl font-bold">{formatDateTR(currentReport.date)}</p><p className="text-sm text-gray-500">Ciro: {formatMoney(Number(currentReport.credit_card) + Number(currentReport.cash) + Number(currentReport.meal_cards))}</p><p className="text-xs text-blue-600 mt-1">👤 {currentReport.fullName} - {formatTimeTR(currentReport.created_at)}</p></div>
                 <div className="flex items-center gap-2">
                   <div className={`px-4 py-2 rounded-lg text-sm font-bold ${calcCashDiff(currentReport) >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>Fark: {formatMoney(calcCashDiff(currentReport))}</div>
-                  {canEdit(currentReport.date) && (<div className="flex gap-1"><button onClick={() => openEditReport(currentReport)} className="bg-blue-100 text-blue-600 px-3 py-2 rounded-lg text-sm">✏️</button>{user?.role === 'admin' && <button onClick={() => initiateDelete('report', currentReport.id, `${formatDateTR(currentReport.date)} raporu`)} className="bg-red-100 text-red-600 px-3 py-2 rounded-lg text-sm">🗑️</button>}</div>)}
+                  {user?.role === 'admin' && (<div className="flex gap-1"><button onClick={() => openEditReport(currentReport)} className="bg-blue-100 text-blue-600 px-3 py-2 rounded-lg text-sm">✏️</button><button onClick={() => initiateDelete('report', currentReport.id, `${formatDateTR(currentReport.date)} raporu`)} className="bg-red-100 text-red-600 px-3 py-2 rounded-lg text-sm">🗑️</button></div>)}
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
@@ -959,12 +924,11 @@ export default function App() {
                           <p className="text-xs text-gray-400">{getPaymentLabel(tx.payment_method)}</p>
                           {tx.description && <p className="text-xs text-gray-400">{tx.description}</p>}
                           <p className="text-xs text-blue-500">👤 {tx.fullName}</p>
-                          {tx.updated_by_name && <p className="text-xs text-orange-500">✏️ Düzenleyen: {tx.updated_by_name}</p>}
                           {tx.invoice_url && (<button onClick={() => setViewInvoice(tx.invoice_url)} className="text-xs text-purple-600 mt-1 hover:underline">📄 Faturayı Gör</button>)}
                         </div>
                         <div className="flex items-center gap-2">
                           <p className={`font-bold ${tx.type === 'ALIM' ? 'text-red-600' : 'text-green-600'}`}>{tx.type === 'ALIM' ? '+' : '-'}{formatMoney(tx.amount)}</p>
-                          {canEdit(tx.date) && (<div className="flex flex-col gap-1"><button onClick={() => openEditTransaction(tx)} className="bg-blue-100 text-blue-500 p-1 rounded text-xs">✏️</button><button onClick={() => initiateDelete('transaction', tx.id, `${formatDateTR(tx.date)} - ${formatMoney(tx.amount)}`)} className="bg-red-100 text-red-500 p-1 rounded text-xs">🗑️</button></div>)}
+                          {user?.role === 'admin' && (<div className="flex flex-col gap-1"><button onClick={() => openEditTransaction(tx)} className="bg-blue-100 text-blue-500 p-1 rounded text-xs">✏️</button><button onClick={() => initiateDelete('transaction', tx.id, `${formatDateTR(tx.date)} - ${formatMoney(tx.amount)}`)} className="bg-red-100 text-red-500 p-1 rounded text-xs">🗑️</button></div>)}
                         </div>
                       </div>
                     </div>
