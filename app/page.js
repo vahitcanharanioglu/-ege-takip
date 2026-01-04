@@ -62,20 +62,78 @@ export default function App() {
 
   const formatMoney = (amt) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(amt || 0);
 
+  // Türkçe sayı girişi - hem nokta hem virgül ondalık ayracı olarak çalışır
+  const parseTurkishNumber = (value) => {
+    if (!value) return 0;
+    // Virgülü noktaya çevir
+    const normalized = value.toString().replace(',', '.');
+    return parseFloat(normalized) || 0;
+  };
+
   // Aynı gün kontrolü
   const isSameDay = (dateStr) => dateStr === getTurkeyDate();
 
-  // Düzenleme yetkisi: Admin her zaman, personel sadece aynı gün
+  // Düzenleme/Silme yetkisi: Admin her zaman, personel sadece aynı gün
   const canEdit = (dateStr) => {
     if (user?.role === 'admin') return true;
     return isSameDay(dateStr);
   };
 
-  // Kasa hareketlerine erişim yetkisi (Admin + Aylin + Yüksel + Çağsel)
+  // Kasa hareketlerine erişim yetkisi (Herkes erişebilir)
   const canAccessKasa = () => {
-    if (user?.role === 'admin') return true;
-    const kasaYetkiliUsers = ['aylin', 'yuksel', 'cagseldeniztekel'];
-    return kasaYetkiliUsers.includes(user?.username?.toLowerCase());
+    return !!user;
+  };
+
+  // Son düzenlemeleri getir (her sayfa için)
+  const getRecentEdits = (type) => {
+    let items = [];
+    if (type === 'transactions') {
+      items = transactions.filter(t => t.updated_by_name).map(t => ({
+        date: t.updated_at,
+        editor: t.updated_by_name,
+        description: `${t.type === 'ALIM' ? 'Alım' : 'Ödeme'}: ${formatMoney(t.amount)}`,
+        itemDate: t.date
+      }));
+    } else if (type === 'reports') {
+      items = dailyReports.filter(r => r.updated_by_name).map(r => ({
+        date: r.updated_at,
+        editor: r.updated_by_name,
+        description: `Gün sonu raporu`,
+        itemDate: r.date
+      }));
+    } else if (type === 'cash') {
+      items = cashMovements.filter(c => c.updated_by_name).map(c => ({
+        date: c.updated_at,
+        editor: c.updated_by_name,
+        description: `${c.type === 'IN' ? 'Gelen' : 'Ödeme'}: ${formatMoney(c.amount)}`,
+        itemDate: c.date
+      }));
+    }
+    return items.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+  };
+
+  // Son Düzenlemeler Componenti
+  const RecentEditsBox = ({ type, title }) => {
+    const edits = getRecentEdits(type);
+    if (edits.length === 0) return null;
+    return (
+      <div className="bg-orange-50 border-2 border-orange-200 rounded-xl p-4 mt-6">
+        <h4 className="text-orange-700 font-bold mb-3">📝 {title}</h4>
+        <div className="space-y-2">
+          {edits.map((e, i) => (
+            <div key={i} className="bg-white p-2 rounded-lg text-sm flex justify-between items-center">
+              <div>
+                <span className="font-semibold text-orange-600">{e.editor}</span>
+                <span className="text-gray-500 ml-2">{e.description}</span>
+              </div>
+              <div className="text-xs text-gray-400">
+                {formatDateTR(e.itemDate)} - {formatTimeTR(e.date)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   useEffect(() => {
@@ -319,7 +377,7 @@ export default function App() {
           business_id: selectedBusiness.id,
           user_id: user.id,
           type: showAddTransaction,
-          amount: parseFloat(transactionForm.amount),
+          amount: parseTurkishNumber(transactionForm.amount),
           date: transactionForm.date,
           description: transactionForm.description,
           payment_method: transactionForm.payment_method,
@@ -350,7 +408,7 @@ export default function App() {
       const { error } = await supabase
         .from('transactions')
         .update({
-          amount: parseFloat(transactionForm.amount),
+          amount: parseTurkishNumber(transactionForm.amount),
           payment_method: transactionForm.payment_method,
           description: transactionForm.description,
           invoice_url: invoiceUrl,
@@ -362,7 +420,7 @@ export default function App() {
       if (error) throw error;
       setTransactions(transactions.map(t => 
         t.id === showEditTransaction.id 
-          ? { ...t, amount: parseFloat(transactionForm.amount), payment_method: transactionForm.payment_method, description: transactionForm.description, invoice_url: invoiceUrl, updated_by_name: user.full_name } 
+          ? { ...t, amount: parseTurkishNumber(transactionForm.amount), payment_method: transactionForm.payment_method, description: transactionForm.description, invoice_url: invoiceUrl, updated_by_name: user.full_name } 
           : t
       ));
     } catch (e) {
@@ -380,7 +438,7 @@ export default function App() {
 
   const handleAddExpense = () => {
     if (!newExpense.description || !newExpense.amount) return;
-    setExpensesList([...expensesList, { id: 'temp_'+Date.now(), description: newExpense.description, amount: parseFloat(newExpense.amount) }]);
+    setExpensesList([...expensesList, { id: 'temp_'+Date.now(), description: newExpense.description, amount: parseTurkishNumber(newExpense.amount) }]);
     setNewExpense({ description: '', amount: '' });
   };
 
@@ -404,10 +462,10 @@ export default function App() {
           business_id: selectedBusiness.id,
           user_id: user.id,
           date: reportForm.date,
-          credit_card: parseFloat(reportForm.credit_card) || 0,
-          cash: parseFloat(reportForm.cash) || 0,
-          meal_cards: parseFloat(reportForm.meal_cards) || 0,
-          actual_cash: parseFloat(reportForm.actual_cash) || 0,
+          credit_card: parseTurkishNumber(reportForm.credit_card) || 0,
+          cash: parseTurkishNumber(reportForm.cash) || 0,
+          meal_cards: parseTurkishNumber(reportForm.meal_cards) || 0,
+          actual_cash: parseTurkishNumber(reportForm.actual_cash) || 0,
           notes: reportForm.notes
         })
         .select('*, users(full_name)')
@@ -446,10 +504,10 @@ export default function App() {
 
     try {
       await supabase.from('daily_reports').update({
-        credit_card: parseFloat(reportForm.credit_card) || 0,
-        cash: parseFloat(reportForm.cash) || 0,
-        meal_cards: parseFloat(reportForm.meal_cards) || 0,
-        actual_cash: parseFloat(reportForm.actual_cash) || 0,
+        credit_card: parseTurkishNumber(reportForm.credit_card) || 0,
+        cash: parseTurkishNumber(reportForm.cash) || 0,
+        meal_cards: parseTurkishNumber(reportForm.meal_cards) || 0,
+        actual_cash: parseTurkishNumber(reportForm.actual_cash) || 0,
         notes: reportForm.notes,
         updated_by_name: user.full_name,
         updated_at: new Date().toISOString()
@@ -465,8 +523,8 @@ export default function App() {
       }
 
       setDailyReports(dailyReports.map(r => r.id === currentReport.id ? {
-        ...r, credit_card: parseFloat(reportForm.credit_card) || 0, cash: parseFloat(reportForm.cash) || 0,
-        meal_cards: parseFloat(reportForm.meal_cards) || 0, actual_cash: parseFloat(reportForm.actual_cash) || 0,
+        ...r, credit_card: parseTurkishNumber(reportForm.credit_card) || 0, cash: parseTurkishNumber(reportForm.cash) || 0,
+        meal_cards: parseTurkishNumber(reportForm.meal_cards) || 0, actual_cash: parseTurkishNumber(reportForm.actual_cash) || 0,
         notes: reportForm.notes, expenses: newExpenses, updated_by_name: user.full_name
       } : r));
     } catch (e) {
@@ -491,7 +549,7 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from('cash_movements')
-        .insert({ user_id: user.id, type: showAddCashMovement, amount: parseFloat(cashMovementForm.amount), description: cashMovementForm.description, date: cashMovementForm.date })
+        .insert({ user_id: user.id, type: showAddCashMovement, amount: parseTurkishNumber(cashMovementForm.amount), description: cashMovementForm.description, date: cashMovementForm.date })
         .select('*, users(full_name)')
         .single();
       
@@ -823,6 +881,7 @@ export default function App() {
               {todayMovements.length === 0 && <p className="text-center text-gray-500 py-8">Hareket yok</p>}
             </div>
           </div>
+          <RecentEditsBox type="cash" title="Son Düzenlemeler - Kasa Hareketleri" />
         </main>
         {showAddCashMovement && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -882,7 +941,7 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-2">
                   <div className={`px-4 py-2 rounded-lg text-sm font-bold ${calcCashDiff(currentReport) >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>Fark: {formatMoney(calcCashDiff(currentReport))}</div>
-                  {canEdit(currentReport.date) && (<div className="flex gap-1"><button onClick={() => openEditReport(currentReport)} className="bg-blue-100 text-blue-600 px-3 py-2 rounded-lg text-sm">✏️</button>{user?.role === 'admin' && <button onClick={() => initiateDelete('report', currentReport.id, `${formatDateTR(currentReport.date)} raporu`)} className="bg-red-100 text-red-600 px-3 py-2 rounded-lg text-sm">🗑️</button>}</div>)}
+                  {canEdit(currentReport.date) && (<div className="flex gap-1"><button onClick={() => openEditReport(currentReport)} className="bg-blue-100 text-blue-600 px-3 py-2 rounded-lg text-sm">✏️</button><button onClick={() => initiateDelete('report', currentReport.id, `${formatDateTR(currentReport.date)} raporu`)} className="bg-red-100 text-red-600 px-3 py-2 rounded-lg text-sm">🗑️</button></div>)}
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
@@ -895,6 +954,7 @@ export default function App() {
             </div>
           ) : (<div className="bg-white rounded-xl shadow p-12 text-center"><p className="text-5xl mb-4">📋</p><p className="text-xl text-gray-500">{formatDateTR(selectedDate)} - Kayıt yok</p></div>)}
           <div className="mt-6"><h3 className="text-lg font-bold mb-4">Son Raporlar</h3><div className="space-y-2">{getBusinessReports(selectedBusiness.id).slice(0, 5).map(r => (<button key={r.id} onClick={() => setSelectedDate(r.date)} className={`w-full text-left p-4 rounded-lg ${selectedDate === r.date ? 'bg-blue-100 border-2 border-blue-500' : 'bg-white'}`}><div className="flex justify-between"><span className="font-semibold">{formatDateTR(r.date)}</span><span>{formatMoney(Number(r.credit_card) + Number(r.cash) + Number(r.meal_cards))}</span></div></button>))}</div></div>
+          <RecentEditsBox type="reports" title="Son Düzenlemeler - Gün Sonu Raporları" />
         </main>
         
         {/* Add Report Modal */}
@@ -974,6 +1034,7 @@ export default function App() {
               </>) : (<div className="flex flex-col items-center justify-center h-full text-gray-500 py-20"><p className="text-5xl mb-4">👈</p><p>Toptancı seçin</p></div>)}
             </div>
           </div>
+          <RecentEditsBox type="transactions" title="Son Düzenlemeler - Toptancı İşlemleri" />
         </main>
         
         {showAddSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-blue-600">Yeni Toptancı</h3><div className="space-y-4"><div><label className="text-sm font-medium">Ad *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Telefon</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Not</label><textarea value={supplierForm.notes} onChange={(e) => setSupplierForm({...supplierForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowAddSupplier(false)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddSupplier} className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold">Ekle</button></div></div></div>)}
