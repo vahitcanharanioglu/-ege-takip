@@ -62,6 +62,80 @@ export default function App() {
 
   const formatMoney = (amt) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(amt || 0);
 
+  // Türkçe sayı girişi - hem nokta hem virgül ondalık ayracı olarak çalışır
+  const parseTurkishNumber = (value) => {
+    if (!value) return 0;
+    // Virgülü noktaya çevir
+    const normalized = value.toString().replace(',', '.');
+    return parseFloat(normalized) || 0;
+  };
+
+  // Aynı gün kontrolü
+  const isSameDay = (dateStr) => dateStr === getTurkeyDate();
+
+  // Düzenleme/Silme yetkisi: Admin her zaman, personel sadece aynı gün
+  const canEdit = (dateStr) => {
+    if (user?.role === 'admin') return true;
+    return isSameDay(dateStr);
+  };
+
+  // Kasa hareketlerine erişim yetkisi (Herkes erişebilir)
+  const canAccessKasa = () => {
+    return !!user;
+  };
+
+  // Son düzenlemeleri getir (her sayfa için)
+  const getRecentEdits = (type) => {
+    let items = [];
+    if (type === 'transactions') {
+      items = transactions.filter(t => t.updated_by_name).map(t => ({
+        date: t.updated_at,
+        editor: t.updated_by_name,
+        description: `${t.type === 'ALIM' ? 'Alım' : 'Ödeme'}: ${formatMoney(t.amount)}`,
+        itemDate: t.date
+      }));
+    } else if (type === 'reports') {
+      items = dailyReports.filter(r => r.updated_by_name).map(r => ({
+        date: r.updated_at,
+        editor: r.updated_by_name,
+        description: `Gün sonu raporu`,
+        itemDate: r.date
+      }));
+    } else if (type === 'cash') {
+      items = cashMovements.filter(c => c.updated_by_name).map(c => ({
+        date: c.updated_at,
+        editor: c.updated_by_name,
+        description: `${c.type === 'IN' ? 'Gelen' : 'Ödeme'}: ${formatMoney(c.amount)}`,
+        itemDate: c.date
+      }));
+    }
+    return items.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+  };
+
+  // Son Düzenlemeler Componenti
+  const RecentEditsBox = ({ type, title }) => {
+    const edits = getRecentEdits(type);
+    if (edits.length === 0) return null;
+    return (
+      <div className="bg-orange-50 border-2 border-orange-200 rounded-xl p-4 mt-6">
+        <h4 className="text-orange-700 font-bold mb-3">📝 {title}</h4>
+        <div className="space-y-2">
+          {edits.map((e, i) => (
+            <div key={i} className="bg-white p-2 rounded-lg text-sm flex justify-between items-center">
+              <div>
+                <span className="font-semibold text-orange-600">{e.editor}</span>
+                <span className="text-gray-500 ml-2">{e.description}</span>
+              </div>
+              <div className="text-xs text-gray-400">
+                {formatDateTR(e.itemDate)} - {formatTimeTR(e.date)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   useEffect(() => {
     const checkRememberedUser = async () => {
       try {
@@ -303,7 +377,7 @@ export default function App() {
           business_id: selectedBusiness.id,
           user_id: user.id,
           type: showAddTransaction,
-          amount: parseFloat(transactionForm.amount),
+          amount: parseTurkishNumber(transactionForm.amount),
           date: transactionForm.date,
           description: transactionForm.description,
           payment_method: transactionForm.payment_method,
@@ -334,17 +408,19 @@ export default function App() {
       const { error } = await supabase
         .from('transactions')
         .update({
-          amount: parseFloat(transactionForm.amount),
+          amount: parseTurkishNumber(transactionForm.amount),
           payment_method: transactionForm.payment_method,
           description: transactionForm.description,
-          invoice_url: invoiceUrl
+          invoice_url: invoiceUrl,
+          updated_by_name: user.full_name,
+          updated_at: new Date().toISOString()
         })
         .eq('id', showEditTransaction.id);
       
       if (error) throw error;
       setTransactions(transactions.map(t => 
         t.id === showEditTransaction.id 
-          ? { ...t, amount: parseFloat(transactionForm.amount), payment_method: transactionForm.payment_method, description: transactionForm.description, invoice_url: invoiceUrl } 
+          ? { ...t, amount: parseTurkishNumber(transactionForm.amount), payment_method: transactionForm.payment_method, description: transactionForm.description, invoice_url: invoiceUrl, updated_by_name: user.full_name } 
           : t
       ));
     } catch (e) {
@@ -362,7 +438,7 @@ export default function App() {
 
   const handleAddExpense = () => {
     if (!newExpense.description || !newExpense.amount) return;
-    setExpensesList([...expensesList, { id: 'temp_'+Date.now(), description: newExpense.description, amount: parseFloat(newExpense.amount) }]);
+    setExpensesList([...expensesList, { id: 'temp_'+Date.now(), description: newExpense.description, amount: parseTurkishNumber(newExpense.amount) }]);
     setNewExpense({ description: '', amount: '' });
   };
 
@@ -386,10 +462,10 @@ export default function App() {
           business_id: selectedBusiness.id,
           user_id: user.id,
           date: reportForm.date,
-          credit_card: parseFloat(reportForm.credit_card) || 0,
-          cash: parseFloat(reportForm.cash) || 0,
-          meal_cards: parseFloat(reportForm.meal_cards) || 0,
-          actual_cash: parseFloat(reportForm.actual_cash) || 0,
+          credit_card: parseTurkishNumber(reportForm.credit_card) || 0,
+          cash: parseTurkishNumber(reportForm.cash) || 0,
+          meal_cards: parseTurkishNumber(reportForm.meal_cards) || 0,
+          actual_cash: parseTurkishNumber(reportForm.actual_cash) || 0,
           notes: reportForm.notes
         })
         .select('*, users(full_name)')
@@ -428,11 +504,13 @@ export default function App() {
 
     try {
       await supabase.from('daily_reports').update({
-        credit_card: parseFloat(reportForm.credit_card) || 0,
-        cash: parseFloat(reportForm.cash) || 0,
-        meal_cards: parseFloat(reportForm.meal_cards) || 0,
-        actual_cash: parseFloat(reportForm.actual_cash) || 0,
-        notes: reportForm.notes
+        credit_card: parseTurkishNumber(reportForm.credit_card) || 0,
+        cash: parseTurkishNumber(reportForm.cash) || 0,
+        meal_cards: parseTurkishNumber(reportForm.meal_cards) || 0,
+        actual_cash: parseTurkishNumber(reportForm.actual_cash) || 0,
+        notes: reportForm.notes,
+        updated_by_name: user.full_name,
+        updated_at: new Date().toISOString()
       }).eq('id', currentReport.id);
 
       await supabase.from('expenses').delete().eq('daily_report_id', currentReport.id);
@@ -445,9 +523,9 @@ export default function App() {
       }
 
       setDailyReports(dailyReports.map(r => r.id === currentReport.id ? {
-        ...r, credit_card: parseFloat(reportForm.credit_card) || 0, cash: parseFloat(reportForm.cash) || 0,
-        meal_cards: parseFloat(reportForm.meal_cards) || 0, actual_cash: parseFloat(reportForm.actual_cash) || 0,
-        notes: reportForm.notes, expenses: newExpenses
+        ...r, credit_card: parseTurkishNumber(reportForm.credit_card) || 0, cash: parseTurkishNumber(reportForm.cash) || 0,
+        meal_cards: parseTurkishNumber(reportForm.meal_cards) || 0, actual_cash: parseTurkishNumber(reportForm.actual_cash) || 0,
+        notes: reportForm.notes, expenses: newExpenses, updated_by_name: user.full_name
       } : r));
     } catch (e) {
       console.error('Edit report error:', e);
@@ -471,7 +549,7 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from('cash_movements')
-        .insert({ user_id: user.id, type: showAddCashMovement, amount: parseFloat(cashMovementForm.amount), description: cashMovementForm.description, date: cashMovementForm.date })
+        .insert({ user_id: user.id, type: showAddCashMovement, amount: parseTurkishNumber(cashMovementForm.amount), description: cashMovementForm.description, date: cashMovementForm.date })
         .select('*, users(full_name)')
         .single();
       
@@ -670,10 +748,12 @@ export default function App() {
           <div className="space-y-4">
             <button onClick={() => setScreen('toptanci')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-red-500"><span className="text-4xl">📦</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Toptancı Ödemeleri</p><p className="text-gray-500">Mal alımı ve ödeme takibi</p></div></button>
             <button onClick={() => setScreen('gunsonu')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-blue-500"><span className="text-4xl">📊</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Gün Sonu</p><p className="text-gray-500">Günlük ciro ve kasa raporu</p></div></button>
-            {user?.role === 'admin' && (<>
+            {canAccessKasa() && (
               <button onClick={() => setScreen('kasa')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-green-500"><span className="text-4xl">💰</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Kasa Hareketleri</p><p className="text-gray-500">Ödeme ve gelen para takibi</p></div></button>
+            )}
+            {user?.role === 'admin' && (
               <button onClick={() => setScreen('ozet')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-purple-500"><span className="text-4xl">📈</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Günlük Özet</p><p className="text-gray-500">Tüm işletmelerin toplamı</p></div></button>
-            </>)}
+            )}
           </div>
           <button onClick={handleLogout} className="w-full mt-8 text-white/80 hover:text-white py-2 transition">Çıkış Yap</button>
         </div>
@@ -755,7 +835,7 @@ export default function App() {
   }
 
   // KASA
-  if (screen === 'kasa' && user?.role === 'admin') {
+  if (screen === 'kasa' && canAccessKasa()) {
     const todayMovements = cashMovements.filter(c => c.date === selectedDate);
     const totalIn = todayMovements.filter(c => c.type === 'IN').reduce((s, c) => s + Number(c.amount), 0);
     const totalOut = todayMovements.filter(c => c.type === 'OUT').reduce((s, c) => s + Number(c.amount), 0);
@@ -785,14 +865,23 @@ export default function App() {
               {todayMovements.map(m => (
                 <div key={m.id} className={`p-4 rounded-lg border-l-4 ${m.type === 'IN' ? 'bg-green-50 border-l-green-500' : 'bg-red-50 border-l-red-500'}`}>
                   <div className="flex justify-between items-start">
-                    <div><p className={`font-semibold ${m.type === 'IN' ? 'text-green-600' : 'text-red-600'}`}>{m.type === 'IN' ? '📥 Gelen' : '📤 Ödeme'}</p><p className="text-sm text-gray-600">{m.description}</p><p className="text-xs text-gray-500">{formatTimeTR(m.created_at)} - {m.fullName}</p></div>
-                    <div className="flex items-center gap-2"><p className={`text-xl font-bold ${m.type === 'IN' ? 'text-green-600' : 'text-red-600'}`}>{m.type === 'IN' ? '+' : '-'}{formatMoney(m.amount)}</p><button onClick={() => initiateDelete('cashMovement', m.id, m.description)} className="bg-red-100 text-red-500 p-1 rounded">🗑️</button></div>
+                    <div>
+                      <p className={`font-semibold ${m.type === 'IN' ? 'text-green-600' : 'text-red-600'}`}>{m.type === 'IN' ? '📥 Gelen' : '📤 Ödeme'}</p>
+                      <p className="text-sm text-gray-600">{m.description}</p>
+                      <p className="text-xs text-gray-500">{formatTimeTR(m.created_at)} - 👤 {m.fullName}</p>
+                      {m.updated_by_name && <p className="text-xs text-orange-500">✏️ Düzenleyen: {m.updated_by_name}</p>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <p className={`text-xl font-bold ${m.type === 'IN' ? 'text-green-600' : 'text-red-600'}`}>{m.type === 'IN' ? '+' : '-'}{formatMoney(m.amount)}</p>
+                      {canEdit(m.date) && <button onClick={() => initiateDelete('cashMovement', m.id, m.description)} className="bg-red-100 text-red-500 p-1 rounded">🗑️</button>}
+                    </div>
                   </div>
                 </div>
               ))}
               {todayMovements.length === 0 && <p className="text-center text-gray-500 py-8">Hareket yok</p>}
             </div>
           </div>
+          <RecentEditsBox type="cash" title="Son Düzenlemeler - Kasa Hareketleri" />
         </main>
         {showAddCashMovement && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -844,10 +933,15 @@ export default function App() {
           {currentReport ? (
             <div className="bg-white rounded-xl shadow p-6">
               <div className="flex justify-between items-start mb-4 flex-wrap gap-2">
-                <div><p className="text-2xl font-bold">{formatDateTR(currentReport.date)}</p><p className="text-sm text-gray-500">Ciro: {formatMoney(Number(currentReport.credit_card) + Number(currentReport.cash) + Number(currentReport.meal_cards))}</p><p className="text-xs text-blue-600 mt-1">👤 {currentReport.fullName} - {formatTimeTR(currentReport.created_at)}</p></div>
+                <div>
+                  <p className="text-2xl font-bold">{formatDateTR(currentReport.date)}</p>
+                  <p className="text-sm text-gray-500">Ciro: {formatMoney(Number(currentReport.credit_card) + Number(currentReport.cash) + Number(currentReport.meal_cards))}</p>
+                  <p className="text-xs text-blue-600 mt-1">👤 {currentReport.fullName} - {formatTimeTR(currentReport.created_at)}</p>
+                  {currentReport.updated_by_name && <p className="text-xs text-orange-500">✏️ Düzenleyen: {currentReport.updated_by_name}</p>}
+                </div>
                 <div className="flex items-center gap-2">
                   <div className={`px-4 py-2 rounded-lg text-sm font-bold ${calcCashDiff(currentReport) >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>Fark: {formatMoney(calcCashDiff(currentReport))}</div>
-                  {user?.role === 'admin' && (<div className="flex gap-1"><button onClick={() => openEditReport(currentReport)} className="bg-blue-100 text-blue-600 px-3 py-2 rounded-lg text-sm">✏️</button><button onClick={() => initiateDelete('report', currentReport.id, `${formatDateTR(currentReport.date)} raporu`)} className="bg-red-100 text-red-600 px-3 py-2 rounded-lg text-sm">🗑️</button></div>)}
+                  {canEdit(currentReport.date) && (<div className="flex gap-1"><button onClick={() => openEditReport(currentReport)} className="bg-blue-100 text-blue-600 px-3 py-2 rounded-lg text-sm">✏️</button><button onClick={() => initiateDelete('report', currentReport.id, `${formatDateTR(currentReport.date)} raporu`)} className="bg-red-100 text-red-600 px-3 py-2 rounded-lg text-sm">🗑️</button></div>)}
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
@@ -860,6 +954,7 @@ export default function App() {
             </div>
           ) : (<div className="bg-white rounded-xl shadow p-12 text-center"><p className="text-5xl mb-4">📋</p><p className="text-xl text-gray-500">{formatDateTR(selectedDate)} - Kayıt yok</p></div>)}
           <div className="mt-6"><h3 className="text-lg font-bold mb-4">Son Raporlar</h3><div className="space-y-2">{getBusinessReports(selectedBusiness.id).slice(0, 5).map(r => (<button key={r.id} onClick={() => setSelectedDate(r.date)} className={`w-full text-left p-4 rounded-lg ${selectedDate === r.date ? 'bg-blue-100 border-2 border-blue-500' : 'bg-white'}`}><div className="flex justify-between"><span className="font-semibold">{formatDateTR(r.date)}</span><span>{formatMoney(Number(r.credit_card) + Number(r.cash) + Number(r.meal_cards))}</span></div></button>))}</div></div>
+          <RecentEditsBox type="reports" title="Son Düzenlemeler - Gün Sonu Raporları" />
         </main>
         
         {/* Add Report Modal */}
@@ -924,11 +1019,12 @@ export default function App() {
                           <p className="text-xs text-gray-400">{getPaymentLabel(tx.payment_method)}</p>
                           {tx.description && <p className="text-xs text-gray-400">{tx.description}</p>}
                           <p className="text-xs text-blue-500">👤 {tx.fullName}</p>
+                          {tx.updated_by_name && <p className="text-xs text-orange-500">✏️ Düzenleyen: {tx.updated_by_name}</p>}
                           {tx.invoice_url && (<button onClick={() => setViewInvoice(tx.invoice_url)} className="text-xs text-purple-600 mt-1 hover:underline">📄 Faturayı Gör</button>)}
                         </div>
                         <div className="flex items-center gap-2">
                           <p className={`font-bold ${tx.type === 'ALIM' ? 'text-red-600' : 'text-green-600'}`}>{tx.type === 'ALIM' ? '+' : '-'}{formatMoney(tx.amount)}</p>
-                          {user?.role === 'admin' && (<div className="flex flex-col gap-1"><button onClick={() => openEditTransaction(tx)} className="bg-blue-100 text-blue-500 p-1 rounded text-xs">✏️</button><button onClick={() => initiateDelete('transaction', tx.id, `${formatDateTR(tx.date)} - ${formatMoney(tx.amount)}`)} className="bg-red-100 text-red-500 p-1 rounded text-xs">🗑️</button></div>)}
+                          {canEdit(tx.date) && (<div className="flex flex-col gap-1"><button onClick={() => openEditTransaction(tx)} className="bg-blue-100 text-blue-500 p-1 rounded text-xs">✏️</button><button onClick={() => initiateDelete('transaction', tx.id, `${formatDateTR(tx.date)} - ${formatMoney(tx.amount)}`)} className="bg-red-100 text-red-500 p-1 rounded text-xs">🗑️</button></div>)}
                         </div>
                       </div>
                     </div>
@@ -938,6 +1034,7 @@ export default function App() {
               </>) : (<div className="flex flex-col items-center justify-center h-full text-gray-500 py-20"><p className="text-5xl mb-4">👈</p><p>Toptancı seçin</p></div>)}
             </div>
           </div>
+          <RecentEditsBox type="transactions" title="Son Düzenlemeler - Toptancı İşlemleri" />
         </main>
         
         {showAddSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-blue-600">Yeni Toptancı</h3><div className="space-y-4"><div><label className="text-sm font-medium">Ad *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Telefon</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Not</label><textarea value={supplierForm.notes} onChange={(e) => setSupplierForm({...supplierForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowAddSupplier(false)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddSupplier} className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold">Ekle</button></div></div></div>)}

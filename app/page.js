@@ -303,7 +303,12 @@ export default function App() {
   const getBusinessSuppliers = () => selectedBusiness ? suppliers.filter(s => s.business_id === selectedBusiness.id) : [];
   const getFilteredSuppliers = () => { 
     const bs = getBusinessSuppliers(); 
-    return searchQuery ? bs.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase())) : bs; 
+    // Alfabetik sırala
+    const sorted = bs.sort((a, b) => a.name.localeCompare(b.name, 'tr'));
+    // Arama - ismin herhangi bir yerinde eşleşme
+    if (!searchQuery) return sorted;
+    const query = searchQuery.toLowerCase();
+    return sorted.filter(s => s.name.toLowerCase().includes(query));
   };
   
   const getSupplierBalance = (id) => {
