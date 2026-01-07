@@ -204,7 +204,7 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from('transactions')
-        .select('*, users(full_name)')
+        .select('*, users!transactions_user_id_fkey(full_name)')
         .order('created_at', { ascending: false });
       if (error) throw error;
       if (data) setTransactions(data.map(t => ({ ...t, fullName: t.users?.full_name })));
@@ -217,7 +217,7 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from('daily_reports')
-        .select('*, users(full_name), expenses(*)')
+        .select('*, users!daily_reports_user_id_fkey(full_name), expenses(*)')
         .order('date', { ascending: false });
       if (error) throw error;
       if (data) setDailyReports(data.map(r => ({ ...r, fullName: r.users?.full_name, expenses: r.expenses || [] })));
@@ -230,7 +230,7 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from('cash_movements')
-        .select('*, users(full_name)')
+        .select('*, users!cash_movements_user_id_fkey(full_name)')
         .order('created_at', { ascending: false });
       if (error) throw error;
       if (data) setCashMovements(data.map(c => ({ ...c, fullName: c.users?.full_name })));
