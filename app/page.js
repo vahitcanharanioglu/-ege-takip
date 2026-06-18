@@ -43,19 +43,31 @@ export default function App() {
   const [employees, setEmployees] = useState([]);
   const [salaryItems, setSalaryItems] = useState([]); // aylık tahakkuk (employee_id, month, year, amount)
   const [salaryPayments, setSalaryPayments] = useState([]); // parçalı ödemeler
-  const [salaryYear] = useState(2026);
-  const [salaryMonths] = useState([6, 7, 8, 9]); // Haziran-Eylül
+  const [salaryStartYear] = useState(2026);
+  const [salaryStartMonth] = useState(6); // Haziran 2026 başlangıç
+  // 12 aylık dönem: {year, month, key:'YYYY-MM', label}
+  const SALARY_PERIOD = (() => {
+    const labels = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+    const arr = [];
+    let y = 2026, m = 6;
+    for (let i = 0; i < 12; i++) {
+      arr.push({ year: y, month: m, key: `${y}-${String(m).padStart(2,'0')}`, label: `${labels[m-1]} ${y}` });
+      m++; if (m > 12) { m = 1; y++; }
+    }
+    return arr;
+  })();
+  const salaryMonths = SALARY_PERIOD; // geriye dönük isim
+  const periodKey = (year, month) => `${year}-${String(month).padStart(2,'0')}`;
   const [salarySortBy, setSalarySortBy] = useState('rem-desc');
-  const [salarySortMonth, setSalarySortMonth] = useState(9);
+  const [salarySortKey, setSalarySortKey] = useState(SALARY_PERIOD[3].key); // Eylül 2026
   const [selectedEmployee, setSelectedEmployee] = useState(null);
-  const [salaryDetailMonth, setSalaryDetailMonth] = useState(9);
+  const [salaryDetailKey, setSalaryDetailKey] = useState(SALARY_PERIOD[3].key);
   const [showAddEmployee, setShowAddEmployee] = useState(false);
-  const [employeeForm, setEmployeeForm] = useState({ name: '', salary: '', startMonth: 6 });
+  const [employeeForm, setEmployeeForm] = useState({ name: '', salary: '', startKey: SALARY_PERIOD[0].key });
   const [salaryPaymentForm, setSalaryPaymentForm] = useState({ amount: '', note: '' });
-  const [editSalaryModal, setEditSalaryModal] = useState(null); // { employee, month }
+  const [editSalaryModal, setEditSalaryModal] = useState(null); // { employee, period }
   const [editSalaryValue, setEditSalaryValue] = useState('');
-  const [terminateModal, setTerminateModal] = useState(null); // employee
-  const SALARY_MONTH_LABELS = { 6: 'Haziran', 7: 'Temmuz', 8: 'Ağustos', 9: 'Eylül' };
+  const [terminateModal, setTerminateModal] = useState(null);
 
   function getTurkeyDate() {
     const now = new Date();
@@ -206,8 +218,7 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from('salary_items')
-        .select('*')
-        .eq('year', salaryYear);
+        .select('*');
       if (error) throw error;
       if (data) setSalaryItems(data);
     } catch (e) {
@@ -220,7 +231,6 @@ export default function App() {
       const { data, error } = await supabase
         .from('salary_payments')
         .select('*, users(full_name)')
-        .eq('year', salaryYear)
         .order('created_at', { ascending: false });
       if (error) throw error;
       if (data) setSalaryPayments(data.map(p => ({ ...p, fullName: p.users?.full_name })));
@@ -434,32 +444,36 @@ export default function App() {
   const getTotalExpenses = () => expensesList.reduce((s, e) => s + e.amount, 0);
 
   // ---- MAAŞ MODÜLÜ yardımcı fonksiyonlar ----
-  // Bir personelin belirli ay için tahakkuk eden maaşı (salary_items'ta kayıt varsa o, yoksa base salary, çıkış sonrası 0)
-  const getSalaryDue = (emp, month) => {
-    if (emp.start_month && month < emp.start_month) return 0;
-    if (emp.end_month && month > emp.end_month) return 0;
-    const item = salaryItems.find(si => si.employee_id === emp.id && si.month === month);
+  // period = {year, month, key}
+  // Bir personelin belirli dönem için tahakkuk eden maaşı
+  const getSalaryDue = (emp, period) => {
+    const pk = period.key;
+    // başlangıç: emp.start_key varsa onu, yoksa eski start_month'u dönem içinde eşle
+    const startKey = emp.start_key || (emp.start_month ? periodKey(salaryStartYear, emp.start_month) : SALARY_PERIOD[0].key);
+    if (pk < startKey) return 0;
+    if (emp.end_key && pk > emp.end_key) return 0;
+    const item = salaryItems.find(si => si.employee_id === emp.id && si.year === period.year && si.month === period.month);
     if (item) return Number(item.amount);
     return Number(emp.base_salary) || 0;
   };
 
-  const getSalaryPaid = (emp, month) =>
+  const getSalaryPaid = (emp, period) =>
     salaryPayments
-      .filter(p => p.employee_id === emp.id && p.month === month)
+      .filter(p => p.employee_id === emp.id && p.year === period.year && p.month === period.month)
       .reduce((s, p) => s + Number(p.amount), 0);
 
-  const getSalaryRemaining = (emp, month) =>
-    Math.max(0, getSalaryDue(emp, month) - getSalaryPaid(emp, month));
+  const getSalaryRemaining = (emp, period) =>
+    Math.max(0, getSalaryDue(emp, period) - getSalaryPaid(emp, period));
 
   const getSortedEmployees = () => {
     const arr = [...employees];
-    const m = salarySortMonth;
+    const p = SALARY_PERIOD.find(x => x.key === salarySortKey) || SALARY_PERIOD[0];
     arr.sort((a, b) => {
       switch (salarySortBy) {
-        case 'rem-desc': return getSalaryRemaining(b, m) - getSalaryRemaining(a, m);
-        case 'rem-asc': return getSalaryRemaining(a, m) - getSalaryRemaining(b, m);
-        case 'salary-desc': return getSalaryDue(b, m) - getSalaryDue(a, m);
-        case 'salary-asc': return getSalaryDue(a, m) - getSalaryDue(b, m);
+        case 'rem-desc': return getSalaryRemaining(b, p) - getSalaryRemaining(a, p);
+        case 'rem-asc': return getSalaryRemaining(a, p) - getSalaryRemaining(b, p);
+        case 'salary-desc': return getSalaryDue(b, p) - getSalaryDue(a, p);
+        case 'salary-asc': return getSalaryDue(a, p) - getSalaryDue(b, p);
         case 'name': return (a.name || '').localeCompare(b.name || '', 'tr');
         default: return (a.sort_order || 0) - (b.sort_order || 0);
       }
@@ -476,7 +490,7 @@ export default function App() {
   const handleAddEmployee = async () => {
     const name = employeeForm.name.trim();
     const salary = parseFloat(employeeForm.salary);
-    const startMonth = parseInt(employeeForm.startMonth, 10);
+    const startKey = employeeForm.startKey;
     if (!name) { setError('Ad soyad gir.'); return; }
     if (isNaN(salary) || salary <= 0) { setError('Geçerli bir maaş gir.'); return; }
     setLoading(true);
@@ -485,15 +499,15 @@ export default function App() {
       const { error } = await supabase.from('employees').insert({
         name,
         base_salary: salary,
-        start_month: startMonth,
-        end_month: null,
+        start_key: startKey,
+        end_key: null,
         sort_order: maxOrder + 1,
         created_by: user.id,
       });
       if (error) throw error;
       await loadEmployees();
       setShowAddEmployee(false);
-      setEmployeeForm({ name: '', salary: '', startMonth: 6 });
+      setEmployeeForm({ name: '', salary: '', startKey: SALARY_PERIOD[0].key });
       setError('');
     } catch (e) {
       setError('Personel eklenemedi: ' + e.message);
@@ -504,23 +518,23 @@ export default function App() {
   // Aylık maaş düzeltme (bu ay ve sonrası)
   const handleEditSalary = async () => {
     if (!editSalaryModal) return;
-    const { employee, month } = editSalaryModal;
+    const { employee, period } = editSalaryModal;
     const nv = parseFloat(editSalaryValue);
     if (isNaN(nv) || nv < 0) { setError('Geçerli bir tutar gir.'); return; }
     setLoading(true);
     try {
-      // Bu ay ve sonraki aylar için salary_items upsert
-      for (const m of salaryMonths) {
-        if (m < month) continue;
-        if (employee.end_month && m > employee.end_month) continue;
-        const existing = salaryItems.find(si => si.employee_id === employee.id && si.month === m);
+      // Bu dönem ve sonraki dönemler için salary_items upsert
+      for (const p of SALARY_PERIOD) {
+        if (p.key < period.key) continue;
+        if (employee.end_key && p.key > employee.end_key) continue;
+        const existing = salaryItems.find(si => si.employee_id === employee.id && si.year === p.year && si.month === p.month);
         if (existing) {
           const { error } = await supabase.from('salary_items')
             .update({ amount: nv }).eq('id', existing.id);
           if (error) throw error;
         } else {
           const { error } = await supabase.from('salary_items').insert({
-            employee_id: employee.id, year: salaryYear, month: m, amount: nv,
+            employee_id: employee.id, year: p.year, month: p.month, amount: nv,
           });
           if (error) throw error;
         }
@@ -542,10 +556,11 @@ export default function App() {
     if (isNaN(amt) || amt <= 0) { setError('Geçerli bir tutar gir.'); return; }
     setLoading(true);
     try {
+      const dp = SALARY_PERIOD.find(x => x.key === salaryDetailKey) || SALARY_PERIOD[0];
       const { error } = await supabase.from('salary_payments').insert({
         employee_id: selectedEmployee.id,
-        year: salaryYear,
-        month: salaryDetailMonth,
+        year: dp.year,
+        month: dp.month,
         amount: amt,
         note: salaryPaymentForm.note.trim() || null,
         created_by: user.id,
@@ -573,12 +588,12 @@ export default function App() {
   };
 
   // İşten çıkarma (çıkış ayı) veya tamamen silme
-  const handleTerminateEmployee = async (month) => {
+  const handleTerminateEmployee = async (endKey) => {
     if (!terminateModal) return;
     setLoading(true);
     try {
       const { error } = await supabase.from('employees')
-        .update({ end_month: month }).eq('id', terminateModal.id);
+        .update({ end_key: endKey }).eq('id', terminateModal.id);
       if (error) throw error;
       await loadEmployees();
       setTerminateModal(null);
@@ -1195,11 +1210,13 @@ export default function App() {
   }
 
   // ============ MAAŞ TAKİBİ (sadece admin) ============
+  // ============ MAAŞ TAKİBİ (sadece admin) — 12 AY ============
   if (screen === 'maas' && user?.role === 'admin') {
     const sorted = getSortedEmployees();
-    const totalDue = employees.reduce((acc, e) => acc + salaryMonths.reduce((s, m) => s + getSalaryDue(e, m), 0), 0);
-    const totalPaid = employees.reduce((acc, e) => acc + salaryMonths.reduce((s, m) => s + getSalaryPaid(e, m), 0), 0);
+    const totalDue = employees.reduce((acc, e) => acc + SALARY_PERIOD.reduce((s, p) => s + getSalaryDue(e, p), 0), 0);
+    const totalPaid = employees.reduce((acc, e) => acc + SALARY_PERIOD.reduce((s, p) => s + getSalaryPaid(e, p), 0), 0);
     const emp = selectedEmployee ? employees.find(e => e.id === selectedEmployee.id) : null;
+    const detailPeriod = SALARY_PERIOD.find(x => x.key === salaryDetailKey) || SALARY_PERIOD[0];
 
     return (
       <div className="min-h-screen bg-gray-50">
@@ -1207,12 +1224,12 @@ export default function App() {
         <header className="bg-white shadow border-b-4 border-red-600"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => { setScreen('menu'); setSelectedEmployee(null); }} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">🧾 Maaş Takibi</h1><span className="bg-black text-white text-xs px-2 py-1 rounded-full">Sadece Admin</span></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
 
         <main className="max-w-7xl mx-auto px-4 py-6">
-          <div className="mb-2 text-sm text-gray-500">Haziran – Eylül {salaryYear}</div>
+          <div className="mb-2 text-sm text-gray-500">{SALARY_PERIOD[0].label} – {SALARY_PERIOD[11].label} (12 ay)</div>
 
           {/* Özet kartları */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
             <div className="bg-white rounded-xl p-4 shadow"><p className="text-sm text-gray-500">Personel</p><p className="text-2xl font-bold text-gray-900">{employees.length}</p></div>
-            <div className="bg-white rounded-xl p-4 shadow"><p className="text-sm text-gray-500">Toplam Maaş Yükü</p><p className="text-2xl font-bold text-gray-900">{formatMoney(totalDue)}</p></div>
+            <div className="bg-white rounded-xl p-4 shadow"><p className="text-sm text-gray-500">Toplam Maaş Yükü (12 ay)</p><p className="text-2xl font-bold text-gray-900">{formatMoney(totalDue)}</p></div>
             <div className="bg-white rounded-xl p-4 shadow"><p className="text-sm text-gray-500">Ödenen</p><p className="text-2xl font-bold text-gray-900">{formatMoney(totalPaid)}</p></div>
             <div className="bg-white rounded-xl p-4 shadow border-l-4 border-red-600"><p className="text-sm text-gray-500">Kalan Borç</p><p className="text-2xl font-bold text-red-600">{formatMoney(totalDue - totalPaid)}</p></div>
           </div>
@@ -1228,41 +1245,41 @@ export default function App() {
               <option value="name">İsme göre (A-Z)</option>
               <option value="manual">Ekleme sırası</option>
             </select>
-            <select value={salarySortMonth} onChange={(e) => setSalarySortMonth(parseInt(e.target.value, 10))} className="px-3 py-2 border-2 rounded-lg text-sm">
-              {salaryMonths.map(m => <option key={m} value={m}>{SALARY_MONTH_LABELS[m]} ayı</option>)}
+            <select value={salarySortKey} onChange={(e) => setSalarySortKey(e.target.value)} className="px-3 py-2 border-2 rounded-lg text-sm">
+              {SALARY_PERIOD.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
             </select>
             <button onClick={() => { setShowAddEmployee(true); setError(''); }} className="ml-auto bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-700">+ Personel Ekle</button>
           </div>
 
-          {/* Maaş tablosu */}
+          {/* Maaş tablosu — 12 ay, yatay kaydırılır */}
           <div className="bg-white rounded-xl shadow overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="text-sm" style={{ minWidth: '900px' }}>
               <thead>
                 <tr className="border-b-2 border-red-600 text-gray-600">
-                  <th className="text-left p-3 font-semibold">Personel</th>
-                  {salaryMonths.map(m => <th key={m} className="text-right p-3 font-semibold">{SALARY_MONTH_LABELS[m]}</th>)}
+                  <th className="text-left p-3 font-semibold sticky left-0 bg-white z-10" style={{ minWidth: '150px' }}>Personel</th>
+                  {SALARY_PERIOD.map(p => <th key={p.key} className="text-right p-3 font-semibold whitespace-nowrap">{p.label}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {sorted.map(e => (
                   <tr key={e.id} onClick={() => { setSelectedEmployee(e); }} className={`border-b cursor-pointer hover:bg-gray-50 ${emp && emp.id === e.id ? 'bg-gray-100' : ''}`}>
-                    <td className="p-3">
+                    <td className="p-3 sticky left-0 bg-white z-10">
                       <div className="flex items-center gap-2">
                         <span className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xs font-semibold flex-shrink-0">{getEmpInitials(e.name)}</span>
-                        <span className="font-medium text-gray-800">{e.name}{e.end_month ? <span className="text-xs text-gray-400"> (çıkış: {SALARY_MONTH_LABELS[e.end_month]})</span> : ''}</span>
+                        <span className="font-medium text-gray-800 whitespace-nowrap">{e.name}{e.end_key ? <span className="text-xs text-gray-400"> (çıkış)</span> : ''}</span>
                       </div>
                     </td>
-                    {salaryMonths.map(m => {
-                      const due = getSalaryDue(e, m);
-                      const rem = getSalaryRemaining(e, m);
+                    {SALARY_PERIOD.map(p => {
+                      const due = getSalaryDue(e, p);
+                      const rem = getSalaryRemaining(e, p);
                       return (
-                        <td key={m} className="p-3 text-right">
+                        <td key={p.key} className="p-3 text-right whitespace-nowrap">
                           {due === 0 ? <span className="text-gray-300">—</span> : rem === 0 ? (
-                            <span className="text-gray-900 font-semibold">✓ ödendi</span>
+                            <span className="text-gray-900 font-semibold">✓</span>
                           ) : (
                             <span className="inline-flex items-center gap-1 justify-end">
                               <span className="text-red-600 font-semibold">{formatMoney(rem)}</span>
-                              <button onClick={(ev) => { ev.stopPropagation(); setEditSalaryModal({ employee: e, month: m }); setEditSalaryValue(String(due)); setError(''); }} className="text-gray-400 hover:text-black" title="Maaşı düzelt">✏️</button>
+                              <button onClick={(ev) => { ev.stopPropagation(); setEditSalaryModal({ employee: e, period: p }); setEditSalaryValue(String(due)); setError(''); }} className="text-gray-400 hover:text-black" title="Maaşı düzelt">✏️</button>
                             </span>
                           )}
                         </td>
@@ -1270,18 +1287,19 @@ export default function App() {
                     })}
                   </tr>
                 ))}
-                {employees.length === 0 && <tr><td colSpan={salaryMonths.length + 1} className="text-center text-gray-400 py-10">Henüz personel eklenmedi.</td></tr>}
+                {employees.length === 0 && <tr><td colSpan={13} className="text-center text-gray-400 py-10">Henüz personel eklenmedi.</td></tr>}
               </tbody>
             </table>
           </div>
+          <p className="text-xs text-gray-400 mt-2">↔ Tabloyu yana kaydırarak 12 ayın tümünü görebilirsiniz.</p>
 
           {/* Personel detay paneli */}
           {emp && (() => {
-            const due = getSalaryDue(emp, salaryDetailMonth);
-            const pd = getSalaryPaid(emp, salaryDetailMonth);
-            const rem = getSalaryRemaining(emp, salaryDetailMonth);
+            const due = getSalaryDue(emp, detailPeriod);
+            const pd = getSalaryPaid(emp, detailPeriod);
+            const rem = getSalaryRemaining(emp, detailPeriod);
             const pct = due > 0 ? Math.min(100, Math.round((pd / due) * 100)) : 0;
-            const empPayments = salaryPayments.filter(p => p.employee_id === emp.id && p.month === salaryDetailMonth);
+            const empPayments = salaryPayments.filter(p => p.employee_id === emp.id && p.year === detailPeriod.year && p.month === detailPeriod.month);
             return (
               <div className="bg-white rounded-xl shadow border-t-4 border-red-600 p-5 mt-6">
                 <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
@@ -1296,8 +1314,8 @@ export default function App() {
                 </div>
 
                 <div className="flex gap-2 flex-wrap mb-4">
-                  {salaryMonths.map(m => (
-                    <button key={m} onClick={() => setSalaryDetailMonth(m)} className={`px-3 py-1 rounded-lg text-xs border-2 ${m === salaryDetailMonth ? 'border-red-600 text-red-600 bg-red-50' : 'border-gray-200 text-gray-500'}`}>{SALARY_MONTH_LABELS[m]}</button>
+                  {SALARY_PERIOD.map(p => (
+                    <button key={p.key} onClick={() => setSalaryDetailKey(p.key)} className={`px-3 py-1 rounded-lg text-xs border-2 whitespace-nowrap ${p.key === salaryDetailKey ? 'border-red-600 text-red-600 bg-red-50' : 'border-gray-200 text-gray-500'}`}>{p.label}</button>
                   ))}
                 </div>
 
@@ -1324,7 +1342,7 @@ export default function App() {
                       <p className="text-sm text-gray-400">Bu ay için henüz ödeme girilmedi.</p>
                     ) : empPayments.map(p => (
                       <div key={p.id} className="flex justify-between items-center py-2 border-b text-sm">
-                        <span className="text-gray-600">{p.note || 'Ödeme'}{p.fullName && user.role !== 'admin' ? ` · ${p.fullName}` : ''}<span className="text-gray-400 text-xs"> · {formatTimeTR(p.created_at)}</span></span>
+                        <span className="text-gray-600">{p.note || 'Ödeme'}<span className="text-gray-400 text-xs"> · {formatTimeTR(p.created_at)}</span></span>
                         <span className="flex items-center gap-3"><span className="font-semibold text-gray-900">{formatMoney(p.amount)}</span><button onClick={() => handleDeleteSalaryPayment(p.id)} className="text-red-600">✕</button></span>
                       </div>
                     ))}
@@ -1343,7 +1361,7 @@ export default function App() {
               <div className="space-y-4">
                 <div><label className="text-sm font-medium">Ad Soyad *</label><input type="text" value={employeeForm.name} onChange={(e) => setEmployeeForm({ ...employeeForm, name: e.target.value })} className="w-full px-4 py-2 border-2 rounded-lg" /></div>
                 <div><label className="text-sm font-medium">Aylık Maaş (₺) *</label><input type="number" value={employeeForm.salary} onChange={(e) => setEmployeeForm({ ...employeeForm, salary: e.target.value })} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div>
-                <div><label className="text-sm font-medium">Başlangıç ayı</label><select value={employeeForm.startMonth} onChange={(e) => setEmployeeForm({ ...employeeForm, startMonth: parseInt(e.target.value, 10) })} className="w-full px-4 py-2 border-2 rounded-lg">{salaryMonths.map(m => <option key={m} value={m}>{SALARY_MONTH_LABELS[m]}'den itibaren</option>)}</select></div>
+                <div><label className="text-sm font-medium">Başlangıç ayı</label><select value={employeeForm.startKey} onChange={(e) => setEmployeeForm({ ...employeeForm, startKey: e.target.value })} className="w-full px-4 py-2 border-2 rounded-lg">{SALARY_PERIOD.map(p => <option key={p.key} value={p.key}>{p.label}'den itibaren</option>)}</select></div>
               </div>
               {error && <div className="bg-red-100 text-red-700 px-3 py-2 rounded-lg text-sm mt-3">{error}</div>}
               <div className="flex gap-2 mt-6"><button onClick={() => { setShowAddEmployee(false); setError(''); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddEmployee} disabled={loading} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Ekle</button></div>
@@ -1356,7 +1374,7 @@ export default function App() {
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-xl p-6 w-full max-w-md">
               <h3 className="text-xl font-bold mb-1 text-black">✏️ Maaş Düzelt</h3>
-              <p className="text-sm text-gray-500 mb-4">{editSalaryModal.employee.name} · {SALARY_MONTH_LABELS[editSalaryModal.month]} ve sonraki aylara uygulanır</p>
+              <p className="text-sm text-gray-500 mb-4">{editSalaryModal.employee.name} · {editSalaryModal.period.label} ve sonraki aylara uygulanır</p>
               <input type="number" value={editSalaryValue} onChange={(e) => setEditSalaryValue(e.target.value)} className="w-full px-4 py-2 border-2 rounded-lg" />
               {error && <div className="bg-red-100 text-red-700 px-3 py-2 rounded-lg text-sm mt-3">{error}</div>}
               <div className="flex gap-2 mt-6"><button onClick={() => { setEditSalaryModal(null); setError(''); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleEditSalary} disabled={loading} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Güncelle</button></div>
@@ -1367,12 +1385,12 @@ export default function App() {
         {/* İşten çıkarma / silme modalı */}
         {terminateModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-md">
+            <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[80vh] overflow-y-auto">
               <h3 className="text-xl font-bold mb-1 text-red-600">İşten Çıkar / Sil</h3>
               <p className="text-sm text-gray-500 mb-4">{terminateModal.name}</p>
               <p className="text-sm text-gray-700 mb-2">Çıkış ayını seç (o aydan sonrası maaş tahakkuku durur):</p>
               <div className="flex gap-2 flex-wrap mb-4">
-                {salaryMonths.map(m => <button key={m} onClick={() => handleTerminateEmployee(m)} className="px-3 py-1.5 rounded-lg text-sm border-2 border-gray-200 hover:border-red-600 hover:text-red-600">{SALARY_MONTH_LABELS[m]}</button>)}
+                {SALARY_PERIOD.map(p => <button key={p.key} onClick={() => handleTerminateEmployee(p.key)} className="px-3 py-1.5 rounded-lg text-sm border-2 border-gray-200 hover:border-red-600 hover:text-red-600 whitespace-nowrap">{p.label}</button>)}
               </div>
               {error && <div className="bg-red-100 text-red-700 px-3 py-2 rounded-lg text-sm mb-3">{error}</div>}
               <div className="flex gap-2 mt-2"><button onClick={() => { setTerminateModal(null); setError(''); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleDeleteEmployee} disabled={loading} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Tamamen Sil</button></div>
@@ -1382,6 +1400,5 @@ export default function App() {
       </div>
     );
   }
-
   return null;
 }
