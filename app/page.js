@@ -465,6 +465,14 @@ export default function App() {
   const getSalaryRemaining = (emp, period) =>
     Math.max(0, getSalaryDue(emp, period) - getSalaryPaid(emp, period));
 
+  // Bugünün ayı (Türkiye), 'YYYY-MM' formatında
+  const currentMonthKey = (() => {
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Istanbul' }));
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  })();
+  // Bir dönemin vadesi gelmiş mi? (güncel ay ve öncesi = gelmiş)
+  const isPeriodDue = (period) => period.key <= currentMonthKey;
+
   const getSortedEmployees = () => {
     const arr = [...employees];
     const p = SALARY_PERIOD.find(x => x.key === salarySortKey) || SALARY_PERIOD[0];
@@ -1215,6 +1223,8 @@ export default function App() {
     const sorted = getSortedEmployees();
     const totalDue = employees.reduce((acc, e) => acc + SALARY_PERIOD.reduce((s, p) => s + getSalaryDue(e, p), 0), 0);
     const totalPaid = employees.reduce((acc, e) => acc + SALARY_PERIOD.reduce((s, p) => s + getSalaryPaid(e, p), 0), 0);
+    // Vadesi gelmiş (güncel ay ve öncesi) ödenmemiş tutar = şu an gerçek borç
+    const totalDueNow = employees.reduce((acc, e) => acc + SALARY_PERIOD.filter(isPeriodDue).reduce((s, p) => s + getSalaryRemaining(e, p), 0), 0);
     const emp = selectedEmployee ? employees.find(e => e.id === selectedEmployee.id) : null;
     const detailPeriod = SALARY_PERIOD.find(x => x.key === salaryDetailKey) || SALARY_PERIOD[0];
 
@@ -1231,7 +1241,7 @@ export default function App() {
             <div className="bg-white rounded-xl p-4 shadow"><p className="text-sm text-gray-500">Personel</p><p className="text-2xl font-bold text-gray-900">{employees.length}</p></div>
             <div className="bg-white rounded-xl p-4 shadow"><p className="text-sm text-gray-500">Toplam Maaş Yükü (12 ay)</p><p className="text-2xl font-bold text-gray-900">{formatMoney(totalDue)}</p></div>
             <div className="bg-white rounded-xl p-4 shadow"><p className="text-sm text-gray-500">Ödenen</p><p className="text-2xl font-bold text-gray-900">{formatMoney(totalPaid)}</p></div>
-            <div className="bg-white rounded-xl p-4 shadow border-l-4 border-red-600"><p className="text-sm text-gray-500">Kalan Borç</p><p className="text-2xl font-bold text-red-600">{formatMoney(totalDue - totalPaid)}</p></div>
+            <div className="bg-white rounded-xl p-4 shadow border-l-4 border-red-600"><p className="text-sm text-gray-500">Vadesi Gelen Kalan</p><p className="text-2xl font-bold text-red-600">{formatMoney(totalDueNow)}</p></div>
           </div>
 
           {/* Kontroller */}
@@ -1272,13 +1282,14 @@ export default function App() {
                     {SALARY_PERIOD.map(p => {
                       const due = getSalaryDue(e, p);
                       const rem = getSalaryRemaining(e, p);
+                      const dueNow = isPeriodDue(p);
                       return (
-                        <td key={p.key} className="p-3 text-right whitespace-nowrap">
+                        <td key={p.key} className={`p-3 text-right whitespace-nowrap ${dueNow ? '' : 'bg-gray-50/40'}`}>
                           {due === 0 ? <span className="text-gray-300">—</span> : rem === 0 ? (
                             <span className="text-gray-900 font-semibold">✓</span>
                           ) : (
                             <span className="inline-flex items-center gap-1 justify-end">
-                              <span className="text-red-600 font-semibold">{formatMoney(rem)}</span>
+                              <span className={`font-semibold ${dueNow ? 'text-red-600' : 'text-gray-400'}`}>{formatMoney(rem)}</span>
                               <button onClick={(ev) => { ev.stopPropagation(); setEditSalaryModal({ employee: e, period: p }); setEditSalaryValue(String(due)); setError(''); }} className="text-gray-400 hover:text-black" title="Maaşı düzelt">✏️</button>
                             </span>
                           )}
@@ -1326,7 +1337,7 @@ export default function App() {
                     <div className="grid grid-cols-3 gap-3 mb-3">
                       <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Maaş</p><p className="text-lg font-bold text-gray-900">{formatMoney(due)}</p></div>
                       <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Ödenen</p><p className="text-lg font-bold text-gray-900">{formatMoney(pd)}</p></div>
-                      <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Kalan</p><p className={`text-lg font-bold ${rem > 0 ? 'text-red-600' : 'text-gray-900'}`}>{formatMoney(rem)}</p></div>
+                      <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Kalan</p><p className={`text-lg font-bold ${rem > 0 && isPeriodDue(detailPeriod) ? 'text-red-600' : 'text-gray-900'}`}>{formatMoney(rem)}</p>{rem > 0 && !isPeriodDue(detailPeriod) && <span className="text-[10px] text-gray-400">vakti gelmedi</span>}</div>
                     </div>
                     <div className="h-2 rounded-full bg-red-100 overflow-hidden mb-4"><div className="h-full bg-black" style={{ width: pct + '%' }}></div></div>
 
