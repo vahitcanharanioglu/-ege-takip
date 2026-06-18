@@ -39,6 +39,24 @@ export default function App() {
   const [error, setError] = useState('');
   const [uploadingInvoice, setUploadingInvoice] = useState(false);
 
+  // ---- MAAŞ MODÜLÜ state ----
+  const [employees, setEmployees] = useState([]);
+  const [salaryItems, setSalaryItems] = useState([]); // aylık tahakkuk (employee_id, month, year, amount)
+  const [salaryPayments, setSalaryPayments] = useState([]); // parçalı ödemeler
+  const [salaryYear] = useState(2026);
+  const [salaryMonths] = useState([6, 7, 8, 9]); // Haziran-Eylül
+  const [salarySortBy, setSalarySortBy] = useState('rem-desc');
+  const [salarySortMonth, setSalarySortMonth] = useState(9);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [salaryDetailMonth, setSalaryDetailMonth] = useState(9);
+  const [showAddEmployee, setShowAddEmployee] = useState(false);
+  const [employeeForm, setEmployeeForm] = useState({ name: '', salary: '', startMonth: 6 });
+  const [salaryPaymentForm, setSalaryPaymentForm] = useState({ amount: '', note: '' });
+  const [editSalaryModal, setEditSalaryModal] = useState(null); // { employee, month }
+  const [editSalaryValue, setEditSalaryValue] = useState('');
+  const [terminateModal, setTerminateModal] = useState(null); // employee
+  const SALARY_MONTH_LABELS = { 6: 'Haziran', 7: 'Temmuz', 8: 'Ağustos', 9: 'Eylül' };
+
   function getTurkeyDate() {
     const now = new Date();
     const turkeyTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Istanbul' }));
@@ -61,80 +79,6 @@ export default function App() {
   };
 
   const formatMoney = (amt) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(amt || 0);
-
-  // Türkçe sayı girişi - hem nokta hem virgül ondalık ayracı olarak çalışır
-  const parseTurkishNumber = (value) => {
-    if (!value) return 0;
-    // Virgülü noktaya çevir
-    const normalized = value.toString().replace(',', '.');
-    return parseFloat(normalized) || 0;
-  };
-
-  // Aynı gün kontrolü
-  const isSameDay = (dateStr) => dateStr === getTurkeyDate();
-
-  // Düzenleme/Silme yetkisi: Admin her zaman, personel sadece aynı gün
-  const canEdit = (dateStr) => {
-    if (user?.role === 'admin') return true;
-    return isSameDay(dateStr);
-  };
-
-  // Kasa hareketlerine erişim yetkisi (Herkes erişebilir)
-  const canAccessKasa = () => {
-    return !!user;
-  };
-
-  // Son düzenlemeleri getir (her sayfa için)
-  const getRecentEdits = (type) => {
-    let items = [];
-    if (type === 'transactions') {
-      items = transactions.filter(t => t.updated_by_name).map(t => ({
-        date: t.updated_at,
-        editor: t.updated_by_name,
-        description: `${t.type === 'ALIM' ? 'Alım' : 'Ödeme'}: ${formatMoney(t.amount)}`,
-        itemDate: t.date
-      }));
-    } else if (type === 'reports') {
-      items = dailyReports.filter(r => r.updated_by_name).map(r => ({
-        date: r.updated_at,
-        editor: r.updated_by_name,
-        description: `Gün sonu raporu`,
-        itemDate: r.date
-      }));
-    } else if (type === 'cash') {
-      items = cashMovements.filter(c => c.updated_by_name).map(c => ({
-        date: c.updated_at,
-        editor: c.updated_by_name,
-        description: `${c.type === 'IN' ? 'Gelen' : 'Ödeme'}: ${formatMoney(c.amount)}`,
-        itemDate: c.date
-      }));
-    }
-    return items.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
-  };
-
-  // Son Düzenlemeler Componenti
-  const RecentEditsBox = ({ type, title }) => {
-    const edits = getRecentEdits(type);
-    if (edits.length === 0) return null;
-    return (
-      <div className="bg-orange-50 border-2 border-orange-200 rounded-xl p-4 mt-6">
-        <h4 className="text-orange-700 font-bold mb-3">📝 {title}</h4>
-        <div className="space-y-2">
-          {edits.map((e, i) => (
-            <div key={i} className="bg-white p-2 rounded-lg text-sm flex justify-between items-center">
-              <div>
-                <span className="font-semibold text-orange-600">{e.editor}</span>
-                <span className="text-gray-500 ml-2">{e.description}</span>
-              </div>
-              <div className="text-xs text-gray-400">
-                {formatDateTR(e.itemDate)} - {formatTimeTR(e.date)}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
 
   useEffect(() => {
     const checkRememberedUser = async () => {
@@ -171,6 +115,11 @@ export default function App() {
       loadTransactions();
       loadDailyReports();
       loadCashMovements();
+      if (user.role === 'admin') {
+        loadEmployees();
+        loadSalaryItems();
+        loadSalaryPayments();
+      }
     }
   }, [user]);
 
@@ -204,7 +153,7 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from('transactions')
-        .select('*, users!transactions_user_id_fkey(full_name)')
+        .select('*, users(full_name)')
         .order('created_at', { ascending: false });
       if (error) throw error;
       if (data) setTransactions(data.map(t => ({ ...t, fullName: t.users?.full_name })));
@@ -217,7 +166,7 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from('daily_reports')
-        .select('*, users!daily_reports_user_id_fkey(full_name), expenses(*)')
+        .select('*, users(full_name), expenses(*)')
         .order('date', { ascending: false });
       if (error) throw error;
       if (data) setDailyReports(data.map(r => ({ ...r, fullName: r.users?.full_name, expenses: r.expenses || [] })));
@@ -230,12 +179,53 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from('cash_movements')
-        .select('*, users!cash_movements_user_id_fkey(full_name)')
+        .select('*, users(full_name)')
         .order('created_at', { ascending: false });
       if (error) throw error;
       if (data) setCashMovements(data.map(c => ({ ...c, fullName: c.users?.full_name })));
     } catch (e) {
       console.error('Cash movements load error:', e);
+    }
+  };
+
+  // ---- MAAŞ MODÜLÜ veri yükleyiciler ----
+  const loadEmployees = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('employees')
+        .select('*')
+        .order('sort_order', { ascending: true });
+      if (error) throw error;
+      if (data) setEmployees(data);
+    } catch (e) {
+      console.error('Employees load error:', e);
+    }
+  };
+
+  const loadSalaryItems = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('salary_items')
+        .select('*')
+        .eq('year', salaryYear);
+      if (error) throw error;
+      if (data) setSalaryItems(data);
+    } catch (e) {
+      console.error('Salary items load error:', e);
+    }
+  };
+
+  const loadSalaryPayments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('salary_payments')
+        .select('*, users(full_name)')
+        .eq('year', salaryYear)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      if (data) setSalaryPayments(data.map(p => ({ ...p, fullName: p.users?.full_name })));
+    } catch (e) {
+      console.error('Salary payments load error:', e);
     }
   };
 
@@ -303,12 +293,7 @@ export default function App() {
   const getBusinessSuppliers = () => selectedBusiness ? suppliers.filter(s => s.business_id === selectedBusiness.id) : [];
   const getFilteredSuppliers = () => { 
     const bs = getBusinessSuppliers(); 
-    // Alfabetik sırala
-    const sorted = bs.sort((a, b) => a.name.localeCompare(b.name, 'tr'));
-    // Arama - ismin herhangi bir yerinde eşleşme
-    if (!searchQuery) return sorted;
-    const query = searchQuery.toLowerCase();
-    return sorted.filter(s => s.name.toLowerCase().includes(query));
+    return searchQuery ? bs.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase())) : bs; 
   };
   
   const getSupplierBalance = (id) => {
@@ -382,7 +367,7 @@ export default function App() {
           business_id: selectedBusiness.id,
           user_id: user.id,
           type: showAddTransaction,
-          amount: parseTurkishNumber(transactionForm.amount),
+          amount: parseFloat(transactionForm.amount),
           date: transactionForm.date,
           description: transactionForm.description,
           payment_method: transactionForm.payment_method,
@@ -413,19 +398,17 @@ export default function App() {
       const { error } = await supabase
         .from('transactions')
         .update({
-          amount: parseTurkishNumber(transactionForm.amount),
+          amount: parseFloat(transactionForm.amount),
           payment_method: transactionForm.payment_method,
           description: transactionForm.description,
-          invoice_url: invoiceUrl,
-          updated_by_name: user.full_name,
-          updated_at: new Date().toISOString()
+          invoice_url: invoiceUrl
         })
         .eq('id', showEditTransaction.id);
       
       if (error) throw error;
       setTransactions(transactions.map(t => 
         t.id === showEditTransaction.id 
-          ? { ...t, amount: parseTurkishNumber(transactionForm.amount), payment_method: transactionForm.payment_method, description: transactionForm.description, invoice_url: invoiceUrl, updated_by_name: user.full_name } 
+          ? { ...t, amount: parseFloat(transactionForm.amount), payment_method: transactionForm.payment_method, description: transactionForm.description, invoice_url: invoiceUrl } 
           : t
       ));
     } catch (e) {
@@ -443,12 +426,188 @@ export default function App() {
 
   const handleAddExpense = () => {
     if (!newExpense.description || !newExpense.amount) return;
-    setExpensesList([...expensesList, { id: 'temp_'+Date.now(), description: newExpense.description, amount: parseTurkishNumber(newExpense.amount) }]);
+    setExpensesList([...expensesList, { id: 'temp_'+Date.now(), description: newExpense.description, amount: parseFloat(newExpense.amount) }]);
     setNewExpense({ description: '', amount: '' });
   };
 
   const handleRemoveExpense = (id) => setExpensesList(expensesList.filter(e => e.id !== id));
   const getTotalExpenses = () => expensesList.reduce((s, e) => s + e.amount, 0);
+
+  // ---- MAAŞ MODÜLÜ yardımcı fonksiyonlar ----
+  // Bir personelin belirli ay için tahakkuk eden maaşı (salary_items'ta kayıt varsa o, yoksa base salary, çıkış sonrası 0)
+  const getSalaryDue = (emp, month) => {
+    if (emp.start_month && month < emp.start_month) return 0;
+    if (emp.end_month && month > emp.end_month) return 0;
+    const item = salaryItems.find(si => si.employee_id === emp.id && si.month === month);
+    if (item) return Number(item.amount);
+    return Number(emp.base_salary) || 0;
+  };
+
+  const getSalaryPaid = (emp, month) =>
+    salaryPayments
+      .filter(p => p.employee_id === emp.id && p.month === month)
+      .reduce((s, p) => s + Number(p.amount), 0);
+
+  const getSalaryRemaining = (emp, month) =>
+    Math.max(0, getSalaryDue(emp, month) - getSalaryPaid(emp, month));
+
+  const getSortedEmployees = () => {
+    const arr = [...employees];
+    const m = salarySortMonth;
+    arr.sort((a, b) => {
+      switch (salarySortBy) {
+        case 'rem-desc': return getSalaryRemaining(b, m) - getSalaryRemaining(a, m);
+        case 'rem-asc': return getSalaryRemaining(a, m) - getSalaryRemaining(b, m);
+        case 'salary-desc': return getSalaryDue(b, m) - getSalaryDue(a, m);
+        case 'salary-asc': return getSalaryDue(a, m) - getSalaryDue(b, m);
+        case 'name': return (a.name || '').localeCompare(b.name || '', 'tr');
+        default: return (a.sort_order || 0) - (b.sort_order || 0);
+      }
+    });
+    return arr;
+  };
+
+  const getEmpInitials = (name) => {
+    const clean = (name || '').replace('.', ' ').trim().split(/\s+/);
+    return clean.map(p => p[0]).slice(0, 2).join('').toUpperCase();
+  };
+
+  // Yeni personel ekle
+  const handleAddEmployee = async () => {
+    const name = employeeForm.name.trim();
+    const salary = parseFloat(employeeForm.salary);
+    const startMonth = parseInt(employeeForm.startMonth, 10);
+    if (!name) { setError('Ad soyad gir.'); return; }
+    if (isNaN(salary) || salary <= 0) { setError('Geçerli bir maaş gir.'); return; }
+    setLoading(true);
+    try {
+      const maxOrder = employees.reduce((m, e) => Math.max(m, e.sort_order || 0), 0);
+      const { error } = await supabase.from('employees').insert({
+        name,
+        base_salary: salary,
+        start_month: startMonth,
+        end_month: null,
+        sort_order: maxOrder + 1,
+        created_by: user.id,
+      });
+      if (error) throw error;
+      await loadEmployees();
+      setShowAddEmployee(false);
+      setEmployeeForm({ name: '', salary: '', startMonth: 6 });
+      setError('');
+    } catch (e) {
+      setError('Personel eklenemedi: ' + e.message);
+    }
+    setLoading(false);
+  };
+
+  // Aylık maaş düzeltme (bu ay ve sonrası)
+  const handleEditSalary = async () => {
+    if (!editSalaryModal) return;
+    const { employee, month } = editSalaryModal;
+    const nv = parseFloat(editSalaryValue);
+    if (isNaN(nv) || nv < 0) { setError('Geçerli bir tutar gir.'); return; }
+    setLoading(true);
+    try {
+      // Bu ay ve sonraki aylar için salary_items upsert
+      for (const m of salaryMonths) {
+        if (m < month) continue;
+        if (employee.end_month && m > employee.end_month) continue;
+        const existing = salaryItems.find(si => si.employee_id === employee.id && si.month === m);
+        if (existing) {
+          const { error } = await supabase.from('salary_items')
+            .update({ amount: nv }).eq('id', existing.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from('salary_items').insert({
+            employee_id: employee.id, year: salaryYear, month: m, amount: nv,
+          });
+          if (error) throw error;
+        }
+      }
+      await loadSalaryItems();
+      setEditSalaryModal(null);
+      setEditSalaryValue('');
+      setError('');
+    } catch (e) {
+      setError('Maaş güncellenemedi: ' + e.message);
+    }
+    setLoading(false);
+  };
+
+  // Parçalı ödeme ekle
+  const handleAddSalaryPayment = async () => {
+    if (!selectedEmployee) return;
+    const amt = parseFloat(salaryPaymentForm.amount);
+    if (isNaN(amt) || amt <= 0) { setError('Geçerli bir tutar gir.'); return; }
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('salary_payments').insert({
+        employee_id: selectedEmployee.id,
+        year: salaryYear,
+        month: salaryDetailMonth,
+        amount: amt,
+        note: salaryPaymentForm.note.trim() || null,
+        created_by: user.id,
+      });
+      if (error) throw error;
+      await loadSalaryPayments();
+      setSalaryPaymentForm({ amount: '', note: '' });
+      setError('');
+    } catch (e) {
+      setError('Ödeme eklenemedi: ' + e.message);
+    }
+    setLoading(false);
+  };
+
+  const handleDeleteSalaryPayment = async (paymentId) => {
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('salary_payments').delete().eq('id', paymentId);
+      if (error) throw error;
+      await loadSalaryPayments();
+    } catch (e) {
+      setError('Ödeme silinemedi: ' + e.message);
+    }
+    setLoading(false);
+  };
+
+  // İşten çıkarma (çıkış ayı) veya tamamen silme
+  const handleTerminateEmployee = async (month) => {
+    if (!terminateModal) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('employees')
+        .update({ end_month: month }).eq('id', terminateModal.id);
+      if (error) throw error;
+      await loadEmployees();
+      setTerminateModal(null);
+      setError('');
+    } catch (e) {
+      setError('İşlem başarısız: ' + e.message);
+    }
+    setLoading(false);
+  };
+
+  const handleDeleteEmployee = async () => {
+    if (!terminateModal) return;
+    setLoading(true);
+    try {
+      await supabase.from('salary_payments').delete().eq('employee_id', terminateModal.id);
+      await supabase.from('salary_items').delete().eq('employee_id', terminateModal.id);
+      const { error } = await supabase.from('employees').delete().eq('id', terminateModal.id);
+      if (error) throw error;
+      await loadEmployees();
+      await loadSalaryItems();
+      await loadSalaryPayments();
+      setTerminateModal(null);
+      setSelectedEmployee(null);
+      setError('');
+    } catch (e) {
+      setError('Personel silinemedi: ' + e.message);
+    }
+    setLoading(false);
+  };
 
   // Kaydet butonuna basıldığında - önce onay sor
   const handleSaveReportClick = (type) => {
@@ -467,10 +626,10 @@ export default function App() {
           business_id: selectedBusiness.id,
           user_id: user.id,
           date: reportForm.date,
-          credit_card: parseTurkishNumber(reportForm.credit_card) || 0,
-          cash: parseTurkishNumber(reportForm.cash) || 0,
-          meal_cards: parseTurkishNumber(reportForm.meal_cards) || 0,
-          actual_cash: parseTurkishNumber(reportForm.actual_cash) || 0,
+          credit_card: parseFloat(reportForm.credit_card) || 0,
+          cash: parseFloat(reportForm.cash) || 0,
+          meal_cards: parseFloat(reportForm.meal_cards) || 0,
+          actual_cash: parseFloat(reportForm.actual_cash) || 0,
           notes: reportForm.notes
         })
         .select('*, users(full_name)')
@@ -509,13 +668,11 @@ export default function App() {
 
     try {
       await supabase.from('daily_reports').update({
-        credit_card: parseTurkishNumber(reportForm.credit_card) || 0,
-        cash: parseTurkishNumber(reportForm.cash) || 0,
-        meal_cards: parseTurkishNumber(reportForm.meal_cards) || 0,
-        actual_cash: parseTurkishNumber(reportForm.actual_cash) || 0,
-        notes: reportForm.notes,
-        updated_by_name: user.full_name,
-        updated_at: new Date().toISOString()
+        credit_card: parseFloat(reportForm.credit_card) || 0,
+        cash: parseFloat(reportForm.cash) || 0,
+        meal_cards: parseFloat(reportForm.meal_cards) || 0,
+        actual_cash: parseFloat(reportForm.actual_cash) || 0,
+        notes: reportForm.notes
       }).eq('id', currentReport.id);
 
       await supabase.from('expenses').delete().eq('daily_report_id', currentReport.id);
@@ -528,9 +685,9 @@ export default function App() {
       }
 
       setDailyReports(dailyReports.map(r => r.id === currentReport.id ? {
-        ...r, credit_card: parseTurkishNumber(reportForm.credit_card) || 0, cash: parseTurkishNumber(reportForm.cash) || 0,
-        meal_cards: parseTurkishNumber(reportForm.meal_cards) || 0, actual_cash: parseTurkishNumber(reportForm.actual_cash) || 0,
-        notes: reportForm.notes, expenses: newExpenses, updated_by_name: user.full_name
+        ...r, credit_card: parseFloat(reportForm.credit_card) || 0, cash: parseFloat(reportForm.cash) || 0,
+        meal_cards: parseFloat(reportForm.meal_cards) || 0, actual_cash: parseFloat(reportForm.actual_cash) || 0,
+        notes: reportForm.notes, expenses: newExpenses
       } : r));
     } catch (e) {
       console.error('Edit report error:', e);
@@ -554,7 +711,7 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from('cash_movements')
-        .insert({ user_id: user.id, type: showAddCashMovement, amount: parseTurkishNumber(cashMovementForm.amount), description: cashMovementForm.description, date: cashMovementForm.date })
+        .insert({ user_id: user.id, type: showAddCashMovement, amount: parseFloat(cashMovementForm.amount), description: cashMovementForm.description, date: cashMovementForm.date })
         .select('*, users(full_name)')
         .single();
       
@@ -636,7 +793,7 @@ export default function App() {
 
   if (initialLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-600 to-blue-700">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-black to-red-700">
         <div className="bg-white p-8 rounded-2xl shadow-xl flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-red-500 border-t-transparent rounded-full animate-spin"></div>
           <p className="text-gray-700 font-medium">Yükleniyor...</p>
@@ -660,7 +817,7 @@ export default function App() {
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[100]">
         <div className="bg-white rounded-xl p-6 w-full max-w-md">
           {deleteConfirm.step === 1 ? (
-            <><div className="text-center mb-6"><p className="text-5xl mb-4">⚠️</p><h3 className="text-xl font-bold text-red-600 mb-2">Silme Onayı (1/2)</h3><p className="text-gray-600">"{deleteConfirm.name}" silinecek.</p></div><div className="flex gap-2"><button onClick={cancelDelete} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={confirmDeleteStep1} className="flex-1 bg-orange-500 text-white py-3 rounded-lg font-semibold">Devam</button></div></>
+            <><div className="text-center mb-6"><p className="text-5xl mb-4">⚠️</p><h3 className="text-xl font-bold text-red-600 mb-2">Silme Onayı (1/2)</h3><p className="text-gray-600">"{deleteConfirm.name}" silinecek.</p></div><div className="flex gap-2"><button onClick={cancelDelete} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={confirmDeleteStep1} className="flex-1 bg-red-500 text-white py-3 rounded-lg font-semibold">Devam</button></div></>
           ) : (
             <><div className="text-center mb-6"><p className="text-5xl mb-4">🚨</p><h3 className="text-xl font-bold text-red-600 mb-2">Son Onay (2/2)</h3><p className="text-gray-600">"{deleteConfirm.name}" kalıcı silinecek!</p></div><div className="flex gap-2"><button onClick={cancelDelete} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">Vazgeç</button><button onClick={confirmDeleteStep2} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Evet, Sil</button></div></>
           )}
@@ -677,17 +834,17 @@ export default function App() {
         <div className="bg-white rounded-xl p-6 w-full max-w-md">
           <div className="text-center mb-6">
             <p className="text-5xl mb-4">📝</p>
-            <h3 className="text-xl font-bold text-orange-600 mb-2">Gider Onayı</h3>
+            <h3 className="text-xl font-bold text-red-600 mb-2">Gider Onayı</h3>
             <p className="text-gray-600">Gider girdiğinize emin misiniz?</p>
             {expensesList.length === 0 ? (
               <p className="text-red-500 mt-2 font-semibold">⚠️ Hiç gider girilmedi!</p>
             ) : (
-              <p className="text-green-600 mt-2 font-semibold">✅ {expensesList.length} gider girildi - Toplam: {formatMoney(getTotalExpenses())}</p>
+              <p className="text-gray-900 mt-2 font-semibold">✅ {expensesList.length} gider girildi - Toplam: {formatMoney(getTotalExpenses())}</p>
             )}
           </div>
           <div className="flex gap-2">
             <button onClick={() => setShowExpenseConfirm(null)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">Geri Dön</button>
-            <button onClick={() => showExpenseConfirm === 'add' ? handleAddReport() : handleEditReport()} className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold">Evet, Kaydet</button>
+            <button onClick={() => showExpenseConfirm === 'add' ? handleAddReport() : handleEditReport()} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Evet, Kaydet</button>
           </div>
         </div>
       </div>
@@ -704,7 +861,7 @@ export default function App() {
             <button onClick={() => setViewInvoice(null)} className="text-gray-500 text-2xl">×</button>
           </div>
           <img src={viewInvoice} alt="Fatura" className="max-w-full rounded-lg" />
-          <a href={viewInvoice} target="_blank" rel="noopener noreferrer" className="block mt-4 text-center bg-blue-500 text-white py-2 rounded-lg">Tam Boyut Aç</a>
+          <a href={viewInvoice} target="_blank" rel="noopener noreferrer" className="block mt-4 text-center bg-red-600 text-white py-2 rounded-lg">Tam Boyut Aç</a>
         </div>
       </div>
     );
@@ -713,7 +870,7 @@ export default function App() {
   // LOGIN
   if (screen === 'login') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-600 to-blue-700 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-black to-red-700 p-4">
         <LoadingOverlay />
         <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md">
           <h1 className="text-3xl font-bold text-center text-red-600 mb-2">🏪 Ege Takip Sistemi</h1>
@@ -742,7 +899,7 @@ export default function App() {
   // MENU
   if (screen === 'menu') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-red-600 to-blue-700 p-4">
+      <div className="min-h-screen bg-gradient-to-br from-black to-red-700 p-4">
         <LoadingOverlay />
         <div className="max-w-lg mx-auto pt-12">
           <div className="text-center text-white mb-8">
@@ -752,13 +909,12 @@ export default function App() {
           </div>
           <div className="space-y-4">
             <button onClick={() => setScreen('toptanci')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-red-500"><span className="text-4xl">📦</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Toptancı Ödemeleri</p><p className="text-gray-500">Mal alımı ve ödeme takibi</p></div></button>
-            <button onClick={() => setScreen('gunsonu')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-blue-500"><span className="text-4xl">📊</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Gün Sonu</p><p className="text-gray-500">Günlük ciro ve kasa raporu</p></div></button>
-            {canAccessKasa() && (
-              <button onClick={() => setScreen('kasa')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-green-500"><span className="text-4xl">💰</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Kasa Hareketleri</p><p className="text-gray-500">Ödeme ve gelen para takibi</p></div></button>
-            )}
-            {user?.role === 'admin' && (
-              <button onClick={() => setScreen('ozet')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-purple-500"><span className="text-4xl">📈</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Günlük Özet</p><p className="text-gray-500">Tüm işletmelerin toplamı</p></div></button>
-            )}
+            <button onClick={() => setScreen('gunsonu')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-black"><span className="text-4xl">📊</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Gün Sonu</p><p className="text-gray-500">Günlük ciro ve kasa raporu</p></div></button>
+            {user?.role === 'admin' && (<>
+              <button onClick={() => setScreen('kasa')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-black"><span className="text-4xl">💰</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Kasa Hareketleri</p><p className="text-gray-500">Ödeme ve gelen para takibi</p></div></button>
+              <button onClick={() => setScreen('ozet')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-black"><span className="text-4xl">📈</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Günlük Özet</p><p className="text-gray-500">Tüm işletmelerin toplamı</p></div></button>
+              <button onClick={() => setScreen('maas')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-red-600"><span className="text-4xl">🧾</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Maaş Takibi</p><p className="text-gray-500">Personel maaşları ve ödemeler</p></div></button>
+            </>)}
           </div>
           <button onClick={handleLogout} className="w-full mt-8 text-white/80 hover:text-white py-2 transition">Çıkış Yap</button>
         </div>
@@ -772,42 +928,42 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gray-100">
         <LoadingOverlay />
-        <header className="bg-white shadow border-b-4 border-purple-500"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-blue-600">←</button><h1 className="text-xl font-bold text-gray-800">📈 Günlük Özet</h1></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
+        <header className="bg-white shadow border-b-4 border-black"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">📈 Günlük Özet</h1></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
         <main className="max-w-4xl mx-auto px-4 py-6">
           <div className="bg-white rounded-xl shadow p-4 mb-6">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <button onClick={() => changeDate(-1)} className="bg-purple-100 text-purple-700 px-4 py-2 rounded-lg font-semibold">← Önceki</button>
+              <button onClick={() => changeDate(-1)} className="bg-gray-100 text-black px-4 py-2 rounded-lg font-semibold">← Önceki</button>
               <div className="text-center">
                 <div className="text-2xl font-bold text-gray-800 border-2 border-gray-200 rounded-lg px-6 py-3 bg-gray-50">{formatDateTR(selectedDate)}</div>
                 <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="mt-2 text-sm border rounded-lg px-3 py-1" />
               </div>
-              <button onClick={() => changeDate(1)} className="bg-purple-100 text-purple-700 px-4 py-2 rounded-lg font-semibold">Sonraki →</button>
+              <button onClick={() => changeDate(1)} className="bg-gray-100 text-black px-4 py-2 rounded-lg font-semibold">Sonraki →</button>
             </div>
-            <div className="flex gap-2 mt-4 justify-center"><button onClick={() => setSelectedDate(getTurkeyDate())} className="bg-purple-500 text-white px-4 py-2 rounded-lg text-sm">Bugün</button></div>
+            <div className="flex gap-2 mt-4 justify-center"><button onClick={() => setSelectedDate(getTurkeyDate())} className="bg-black text-white px-4 py-2 rounded-lg text-sm">Bugün</button></div>
           </div>
           
           <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="bg-gradient-to-r from-purple-500 to-purple-700 rounded-2xl p-6 text-white">
+            <div className="bg-gradient-to-r from-black to-red-700 rounded-2xl p-6 text-white">
               <p className="text-white/80 text-sm">Toplam Ciro</p>
               <p className="text-3xl font-bold">{formatMoney(summary.total)}</p>
             </div>
-            <div className="bg-gradient-to-r from-green-500 to-green-700 rounded-2xl p-6 text-white">
+            <div className="bg-gradient-to-r from-black to-red-700 rounded-2xl p-6 text-white">
               <p className="text-white/80 text-sm">Net Ciro (Giderler Düşülmüş)</p>
               <p className="text-3xl font-bold">{formatMoney(summary.netTotal)}</p>
             </div>
           </div>
           
           <div className="grid grid-cols-4 gap-3 mb-6">
-            <div className="bg-blue-50 p-4 rounded-xl border-2 border-blue-200 text-center">
-              <p className="text-blue-600 font-semibold text-xs">💳 Kredi Kartı</p>
+            <div className="bg-gray-50 p-4 rounded-xl border-2 border-gray-300 text-center">
+              <p className="text-black font-semibold text-xs">💳 Kredi Kartı</p>
               <p className="text-lg font-bold">{formatMoney(summary.totalCreditCard)}</p>
             </div>
-            <div className="bg-green-50 p-4 rounded-xl border-2 border-green-200 text-center">
-              <p className="text-green-600 font-semibold text-xs">💵 Nakit</p>
+            <div className="bg-gray-50 p-4 rounded-xl border-2 border-gray-300 text-center">
+              <p className="text-gray-900 font-semibold text-xs">💵 Nakit</p>
               <p className="text-lg font-bold">{formatMoney(summary.totalCash)}</p>
             </div>
-            <div className="bg-orange-50 p-4 rounded-xl border-2 border-orange-200 text-center">
-              <p className="text-orange-600 font-semibold text-xs">🎫 Yemek Kartı</p>
+            <div className="bg-red-50 p-4 rounded-xl border-2 border-red-200 text-center">
+              <p className="text-red-600 font-semibold text-xs">🎫 Yemek Kartı</p>
               <p className="text-lg font-bold">{formatMoney(summary.totalMealCards)}</p>
             </div>
             <div className="bg-red-50 p-4 rounded-xl border-2 border-red-200 text-center">
@@ -822,8 +978,8 @@ export default function App() {
               <div className="flex justify-between items-center mb-2">
                 <p className="font-bold">{b.name}</p>
                 <div className="text-right">
-                  <p className="font-bold text-purple-600">{formatMoney(b.total)}</p>
-                  <p className="text-sm text-green-600">Net: {formatMoney(b.net)}</p>
+                  <p className="font-bold text-black">{formatMoney(b.total)}</p>
+                  <p className="text-sm text-gray-900">Net: {formatMoney(b.net)}</p>
                 </div>
               </div>
               <div className="grid grid-cols-4 gap-2 text-sm">
@@ -840,64 +996,55 @@ export default function App() {
   }
 
   // KASA
-  if (screen === 'kasa' && canAccessKasa()) {
+  if (screen === 'kasa' && user?.role === 'admin') {
     const todayMovements = cashMovements.filter(c => c.date === selectedDate);
     const totalIn = todayMovements.filter(c => c.type === 'IN').reduce((s, c) => s + Number(c.amount), 0);
     const totalOut = todayMovements.filter(c => c.type === 'OUT').reduce((s, c) => s + Number(c.amount), 0);
     return (
       <div className="min-h-screen bg-gray-100">
         <LoadingOverlay />
-        <header className="bg-white shadow border-b-4 border-green-500"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-blue-600">←</button><h1 className="text-xl font-bold text-gray-800">💰 Kasa Hareketleri</h1></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
+        <header className="bg-white shadow border-b-4 border-black"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">💰 Kasa Hareketleri</h1></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
         <main className="max-w-4xl mx-auto px-4 py-6">
           <div className="bg-white rounded-xl shadow p-4 mb-6">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <button onClick={() => changeDate(-1)} className="bg-green-100 text-green-700 px-4 py-2 rounded-lg font-semibold">← Önceki</button>
+              <button onClick={() => changeDate(-1)} className="bg-gray-100 text-gray-900 px-4 py-2 rounded-lg font-semibold">← Önceki</button>
               <div className="text-center"><div className="text-2xl font-bold text-gray-800 border-2 border-gray-200 rounded-lg px-6 py-3 bg-gray-50">{formatDateTR(selectedDate)}</div><input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="mt-2 text-sm border rounded-lg px-3 py-1" /></div>
-              <button onClick={() => changeDate(1)} className="bg-green-100 text-green-700 px-4 py-2 rounded-lg font-semibold">Sonraki →</button>
+              <button onClick={() => changeDate(1)} className="bg-gray-100 text-gray-900 px-4 py-2 rounded-lg font-semibold">Sonraki →</button>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4 mb-6">
-            <button onClick={() => { setCashMovementForm({...cashMovementForm, date: selectedDate}); setShowAddCashMovement('IN'); }} className="bg-green-500 text-white p-4 rounded-xl font-semibold text-lg">+ Gelen Para</button>
+            <button onClick={() => { setCashMovementForm({...cashMovementForm, date: selectedDate}); setShowAddCashMovement('IN'); }} className="bg-black text-white p-4 rounded-xl font-semibold text-lg">+ Gelen Para</button>
             <button onClick={() => { setCashMovementForm({...cashMovementForm, date: selectedDate}); setShowAddCashMovement('OUT'); }} className="bg-red-500 text-white p-4 rounded-xl font-semibold text-lg">+ Ödeme Yap</button>
           </div>
           <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="bg-green-50 p-4 rounded-xl border-2 border-green-200 text-center"><p className="text-green-600 font-semibold">Gelen</p><p className="text-2xl font-bold text-green-700">{formatMoney(totalIn)}</p></div>
+            <div className="bg-gray-50 p-4 rounded-xl border-2 border-gray-300 text-center"><p className="text-gray-900 font-semibold">Gelen</p><p className="text-2xl font-bold text-gray-900">{formatMoney(totalIn)}</p></div>
             <div className="bg-red-50 p-4 rounded-xl border-2 border-red-200 text-center"><p className="text-red-600 font-semibold">Çıkan</p><p className="text-2xl font-bold text-red-700">{formatMoney(totalOut)}</p></div>
           </div>
           <div className="bg-white rounded-xl shadow p-6">
             <h3 className="text-lg font-bold text-gray-800 mb-4">Hareketler</h3>
             <div className="space-y-2">
               {todayMovements.map(m => (
-                <div key={m.id} className={`p-4 rounded-lg border-l-4 ${m.type === 'IN' ? 'bg-green-50 border-l-green-500' : 'bg-red-50 border-l-red-500'}`}>
+                <div key={m.id} className={`p-4 rounded-lg border-l-4 ${m.type === 'IN' ? 'bg-gray-50 border-l-green-500' : 'bg-red-50 border-l-red-500'}`}>
                   <div className="flex justify-between items-start">
-                    <div>
-                      <p className={`font-semibold ${m.type === 'IN' ? 'text-green-600' : 'text-red-600'}`}>{m.type === 'IN' ? '📥 Gelen' : '📤 Ödeme'}</p>
-                      <p className="text-sm text-gray-600">{m.description}</p>
-                      <p className="text-xs text-gray-500">{formatTimeTR(m.created_at)} - 👤 {m.fullName}</p>
-                      {m.updated_by_name && <p className="text-xs text-orange-500">✏️ Düzenleyen: {m.updated_by_name}</p>}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <p className={`text-xl font-bold ${m.type === 'IN' ? 'text-green-600' : 'text-red-600'}`}>{m.type === 'IN' ? '+' : '-'}{formatMoney(m.amount)}</p>
-                      {canEdit(m.date) && <button onClick={() => initiateDelete('cashMovement', m.id, m.description)} className="bg-red-100 text-red-500 p-1 rounded">🗑️</button>}
-                    </div>
+                    <div><p className={`font-semibold ${m.type === 'IN' ? 'text-gray-900' : 'text-red-600'}`}>{m.type === 'IN' ? '📥 Gelen' : '📤 Ödeme'}</p><p className="text-sm text-gray-600">{m.description}</p><p className="text-xs text-gray-500">{formatTimeTR(m.created_at)} - {m.fullName}</p></div>
+                    <div className="flex items-center gap-2"><p className={`text-xl font-bold ${m.type === 'IN' ? 'text-gray-900' : 'text-red-600'}`}>{m.type === 'IN' ? '+' : '-'}{formatMoney(m.amount)}</p><button onClick={() => initiateDelete('cashMovement', m.id, m.description)} className="bg-red-100 text-red-500 p-1 rounded">🗑️</button></div>
                   </div>
                 </div>
               ))}
               {todayMovements.length === 0 && <p className="text-center text-gray-500 py-8">Hareket yok</p>}
             </div>
           </div>
-          <RecentEditsBox type="cash" title="Son Düzenlemeler - Kasa Hareketleri" />
         </main>
         {showAddCashMovement && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-xl p-6 w-full max-w-md">
-              <h3 className={`text-xl font-bold mb-4 ${showAddCashMovement === 'IN' ? 'text-green-600' : 'text-red-600'}`}>{showAddCashMovement === 'IN' ? '📥 Gelen Para' : '📤 Ödeme Yap'}</h3>
+              <h3 className={`text-xl font-bold mb-4 ${showAddCashMovement === 'IN' ? 'text-gray-900' : 'text-red-600'}`}>{showAddCashMovement === 'IN' ? '📥 Gelen Para' : '📤 Ödeme Yap'}</h3>
               <div className="space-y-4">
                 <div><label className="block text-sm font-medium mb-1">Tutar *</label><input type="number" value={cashMovementForm.amount} onChange={(e) => setCashMovementForm({...cashMovementForm, amount: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div>
                 <div><label className="block text-sm font-medium mb-1">Açıklama *</label><input type="text" value={cashMovementForm.description} onChange={(e) => setCashMovementForm({...cashMovementForm, description: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div>
                 <div><label className="block text-sm font-medium mb-1">Tarih</label><div className="text-lg font-bold border-2 rounded-lg px-4 py-2 bg-gray-50">{formatDateTR(cashMovementForm.date)}</div></div>
               </div>
-              <div className="flex gap-2 mt-6"><button onClick={() => setShowAddCashMovement(null)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddCashMovement} className={`flex-1 text-white py-3 rounded-lg font-semibold ${showAddCashMovement === 'IN' ? 'bg-green-500' : 'bg-red-500'}`}>Kaydet</button></div>
+              <div className="flex gap-2 mt-6"><button onClick={() => setShowAddCashMovement(null)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddCashMovement} className={`flex-1 text-white py-3 rounded-lg font-semibold ${showAddCashMovement === 'IN' ? 'bg-black' : 'bg-red-500'}`}>Kaydet</button></div>
             </div>
           </div>
         )}
@@ -913,8 +1060,8 @@ export default function App() {
       return (
         <div className="min-h-screen bg-gray-100">
           <LoadingOverlay />
-          <header className="bg-white shadow border-b-4 border-blue-500"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-blue-600">←</button><h1 className="text-xl font-bold text-gray-800">📊 Gün Sonu</h1></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
-          <main className="max-w-lg mx-auto px-4 py-8"><div className="space-y-4">{allowedBusinesses.map(b => (<button key={b.id} onClick={() => setSelectedBusiness(b)} className="w-full bg-white p-6 rounded-xl shadow text-left border-l-4 border-blue-500"><p className="text-xl font-bold">{b.name}</p><p className="text-sm text-gray-500">{getBusinessReports(b.id).length} rapor</p></button>))}</div></main>
+          <header className="bg-white shadow border-b-4 border-black"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">📊 Gün Sonu</h1></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
+          <main className="max-w-lg mx-auto px-4 py-8"><div className="space-y-4">{allowedBusinesses.map(b => (<button key={b.id} onClick={() => setSelectedBusiness(b)} className="w-full bg-white p-6 rounded-xl shadow text-left border-l-4 border-black"><p className="text-xl font-bold">{b.name}</p><p className="text-sm text-gray-500">{getBusinessReports(b.id).length} rapor</p></button>))}</div></main>
         </div>
       );
     }
@@ -924,13 +1071,13 @@ export default function App() {
       <div className="min-h-screen bg-gray-100">
         <LoadingOverlay />
         <ExpenseConfirmModal />
-        <header className="bg-white shadow border-b-4 border-blue-500"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setSelectedBusiness(null)} className="text-2xl text-blue-600">←</button><h1 className="text-xl font-bold text-gray-800">📊 {selectedBusiness.name}</h1></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
+        <header className="bg-white shadow border-b-4 border-black"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setSelectedBusiness(null)} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">📊 {selectedBusiness.name}</h1></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
         <main className="max-w-4xl mx-auto px-4 py-6">
           <div className="bg-white rounded-xl shadow p-4 mb-6">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <button onClick={() => changeDate(-1)} className="bg-blue-100 text-blue-700 px-4 py-2 rounded-lg font-semibold">←</button>
+              <button onClick={() => changeDate(-1)} className="bg-gray-100 text-black px-4 py-2 rounded-lg font-semibold">←</button>
               <div className="text-center"><div className="text-2xl font-bold border-2 rounded-lg px-6 py-3 bg-gray-50">{formatDateTR(selectedDate)}</div><input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="mt-2 text-sm border rounded-lg px-3 py-1" /></div>
-              <button onClick={() => changeDate(1)} className="bg-blue-100 text-blue-700 px-4 py-2 rounded-lg font-semibold">→</button>
+              <button onClick={() => changeDate(1)} className="bg-gray-100 text-black px-4 py-2 rounded-lg font-semibold">→</button>
             </div>
             <div className="flex gap-2 mt-4 justify-center"><button onClick={() => setSelectedDate(getTurkeyDate())} className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm">Bugün</button></div>
           </div>
@@ -938,35 +1085,29 @@ export default function App() {
           {currentReport ? (
             <div className="bg-white rounded-xl shadow p-6">
               <div className="flex justify-between items-start mb-4 flex-wrap gap-2">
-                <div>
-                  <p className="text-2xl font-bold">{formatDateTR(currentReport.date)}</p>
-                  <p className="text-sm text-gray-500">Ciro: {formatMoney(Number(currentReport.credit_card) + Number(currentReport.cash) + Number(currentReport.meal_cards))}</p>
-                  <p className="text-xs text-blue-600 mt-1">👤 {currentReport.fullName} - {formatTimeTR(currentReport.created_at)}</p>
-                  {currentReport.updated_by_name && <p className="text-xs text-orange-500">✏️ Düzenleyen: {currentReport.updated_by_name}</p>}
-                </div>
+                <div><p className="text-2xl font-bold">{formatDateTR(currentReport.date)}</p><p className="text-sm text-gray-500">Ciro: {formatMoney(Number(currentReport.credit_card) + Number(currentReport.cash) + Number(currentReport.meal_cards))}</p><p className="text-xs text-black mt-1">👤 {currentReport.fullName} - {formatTimeTR(currentReport.created_at)}</p></div>
                 <div className="flex items-center gap-2">
-                  <div className={`px-4 py-2 rounded-lg text-sm font-bold ${calcCashDiff(currentReport) >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>Fark: {formatMoney(calcCashDiff(currentReport))}</div>
-                  {canEdit(currentReport.date) && (<div className="flex gap-1"><button onClick={() => openEditReport(currentReport)} className="bg-blue-100 text-blue-600 px-3 py-2 rounded-lg text-sm">✏️</button><button onClick={() => initiateDelete('report', currentReport.id, `${formatDateTR(currentReport.date)} raporu`)} className="bg-red-100 text-red-600 px-3 py-2 rounded-lg text-sm">🗑️</button></div>)}
+                  <div className={`px-4 py-2 rounded-lg text-sm font-bold ${calcCashDiff(currentReport) >= 0 ? 'bg-gray-100 text-gray-900' : 'bg-red-100 text-red-700'}`}>Fark: {formatMoney(calcCashDiff(currentReport))}</div>
+                  {user?.role === 'admin' && (<div className="flex gap-1"><button onClick={() => openEditReport(currentReport)} className="bg-gray-100 text-black px-3 py-2 rounded-lg text-sm">✏️</button><button onClick={() => initiateDelete('report', currentReport.id, `${formatDateTR(currentReport.date)} raporu`)} className="bg-red-100 text-red-600 px-3 py-2 rounded-lg text-sm">🗑️</button></div>)}
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                <div className="bg-blue-50 p-3 rounded-lg border-2 border-blue-200"><p className="text-blue-600 font-semibold text-xs">💳 Kredi Kartı</p><p className="text-lg font-bold">{formatMoney(currentReport.credit_card)}</p></div>
-                <div className="bg-green-50 p-3 rounded-lg border-2 border-green-200"><p className="text-green-600 font-semibold text-xs">💵 Nakit</p><p className="text-lg font-bold">{formatMoney(currentReport.cash)}</p></div>
-                <div className="bg-orange-50 p-3 rounded-lg border-2 border-orange-200"><p className="text-orange-600 font-semibold text-xs">🎫 Yemek Kartı</p><p className="text-lg font-bold">{formatMoney(currentReport.meal_cards)}</p></div>
-                <div className="bg-purple-50 p-3 rounded-lg border-2 border-purple-200"><p className="text-purple-600 font-semibold text-xs">💰 Eldeki Nakit</p><p className="text-lg font-bold">{formatMoney(currentReport.actual_cash)}</p></div>
+                <div className="bg-gray-50 p-3 rounded-lg border-2 border-gray-300"><p className="text-black font-semibold text-xs">💳 Kredi Kartı</p><p className="text-lg font-bold">{formatMoney(currentReport.credit_card)}</p></div>
+                <div className="bg-gray-50 p-3 rounded-lg border-2 border-gray-300"><p className="text-gray-900 font-semibold text-xs">💵 Nakit</p><p className="text-lg font-bold">{formatMoney(currentReport.cash)}</p></div>
+                <div className="bg-red-50 p-3 rounded-lg border-2 border-red-200"><p className="text-red-600 font-semibold text-xs">🎫 Yemek Kartı</p><p className="text-lg font-bold">{formatMoney(currentReport.meal_cards)}</p></div>
+                <div className="bg-gray-50 p-3 rounded-lg border-2 border-gray-300"><p className="text-black font-semibold text-xs">💰 Eldeki Nakit</p><p className="text-lg font-bold">{formatMoney(currentReport.actual_cash)}</p></div>
               </div>
               <div className="bg-red-50 p-4 rounded-lg border-2 border-red-200 mb-4"><div className="flex justify-between mb-2"><p className="text-red-600 font-semibold">📉 Giderler</p><p className="font-bold text-red-700">{formatMoney(getExpTotal(currentReport.expenses))}</p></div>{(currentReport.expenses || []).length > 0 ? (currentReport.expenses.map((e, i) => (<div key={i} className="flex justify-between text-sm bg-white p-2 rounded mb-1"><span>{e.description}</span><span className="text-red-600 font-semibold">{formatMoney(e.amount)}</span></div>))) : (<p className="text-sm text-gray-500 text-center py-2">Gider girilmedi</p>)}</div>
             </div>
           ) : (<div className="bg-white rounded-xl shadow p-12 text-center"><p className="text-5xl mb-4">📋</p><p className="text-xl text-gray-500">{formatDateTR(selectedDate)} - Kayıt yok</p></div>)}
-          <div className="mt-6"><h3 className="text-lg font-bold mb-4">Son Raporlar</h3><div className="space-y-2">{getBusinessReports(selectedBusiness.id).slice(0, 5).map(r => (<button key={r.id} onClick={() => setSelectedDate(r.date)} className={`w-full text-left p-4 rounded-lg ${selectedDate === r.date ? 'bg-blue-100 border-2 border-blue-500' : 'bg-white'}`}><div className="flex justify-between"><span className="font-semibold">{formatDateTR(r.date)}</span><span>{formatMoney(Number(r.credit_card) + Number(r.cash) + Number(r.meal_cards))}</span></div></button>))}</div></div>
-          <RecentEditsBox type="reports" title="Son Düzenlemeler - Gün Sonu Raporları" />
+          <div className="mt-6"><h3 className="text-lg font-bold mb-4">Son Raporlar</h3><div className="space-y-2">{getBusinessReports(selectedBusiness.id).slice(0, 5).map(r => (<button key={r.id} onClick={() => setSelectedDate(r.date)} className={`w-full text-left p-4 rounded-lg ${selectedDate === r.date ? 'bg-gray-100 border-2 border-black' : 'bg-white'}`}><div className="flex justify-between"><span className="font-semibold">{formatDateTR(r.date)}</span><span>{formatMoney(Number(r.credit_card) + Number(r.cash) + Number(r.meal_cards))}</span></div></button>))}</div></div>
         </main>
         
         {/* Add Report Modal */}
         {showAddReport && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-lg my-8"><h3 className="text-xl font-bold mb-4 text-red-600">📊 Gün Sonu - {selectedBusiness.name}</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tarih</label><div className="text-lg font-bold border-2 rounded-lg px-4 py-2 bg-gray-50">{formatDateTR(reportForm.date)}</div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">💳 Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div><div><label className="text-sm font-medium">💵 Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">🎫 Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div><div><label className="text-sm font-medium">💰 Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div></div><div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-3">📉 Giderler</label><div className="flex gap-2 mb-3"><input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} className="flex-1 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-red-500 text-white px-4 py-2 rounded-lg">+</button></div>{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400">✕</button></div></div>))}<div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Toplam:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div></div><div><label className="text-sm font-medium">📝 Notlar</label><textarea value={reportForm.notes} onChange={(e) => setReportForm({...reportForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowAddReport(false); setExpensesList([]); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={() => handleSaveReportClick('add')} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Kaydet</button></div></div></div>)}
         
         {/* Edit Report Modal */}
-        {showEditReport && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-lg my-8"><h3 className="text-xl font-bold mb-4 text-blue-600">✏️ Rapor Düzenle</h3><div className="space-y-4"><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">💳 Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">💵 Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">🎫 Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">💰 Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div></div><div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-3">📉 Giderler</label><div className="flex gap-2 mb-3"><input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} className="flex-1 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-red-500 text-white px-4 py-2 rounded-lg">+</button></div>{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400">✕</button></div></div>))}<div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Toplam:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowEditReport(false); setExpensesList([]); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={() => handleSaveReportClick('edit')} className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
+        {showEditReport && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-lg my-8"><h3 className="text-xl font-bold mb-4 text-black">✏️ Rapor Düzenle</h3><div className="space-y-4"><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">💳 Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">💵 Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">🎫 Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">💰 Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div></div><div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-3">📉 Giderler</label><div className="flex gap-2 mb-3"><input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} className="flex-1 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-red-500 text-white px-4 py-2 rounded-lg">+</button></div>{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400">✕</button></div></div>))}<div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Toplam:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowEditReport(false); setExpensesList([]); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={() => handleSaveReportClick('edit')} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
         
         <DeleteConfirmModal />
       </div>
@@ -980,7 +1121,7 @@ export default function App() {
       return (
         <div className="min-h-screen bg-gray-100">
           <LoadingOverlay />
-          <header className="bg-white shadow border-b-4 border-red-500"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-blue-600">←</button><h1 className="text-xl font-bold text-gray-800">📦 Toptancı</h1></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
+          <header className="bg-white shadow border-b-4 border-red-500"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">📦 Toptancı</h1></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
           <main className="max-w-lg mx-auto px-4 py-8"><div className="space-y-4">{allowedBusinesses.map(b => (<button key={b.id} onClick={() => setSelectedBusiness(b)} className="w-full bg-white p-6 rounded-xl shadow text-left border-l-4 border-red-500"><p className="text-xl font-bold">{b.name}</p></button>))}</div></main>
         </div>
       );
@@ -990,15 +1131,15 @@ export default function App() {
       <div className="min-h-screen bg-gray-100">
         <LoadingOverlay />
         <InvoiceModal />
-        <header className="bg-white shadow border-b-4 border-red-500"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => { setSelectedBusiness(null); setSelectedSupplier(null); setSearchQuery(''); }} className="text-2xl text-blue-600">←</button><div><h1 className="text-xl font-bold">{selectedBusiness.name}</h1><p className="text-sm text-gray-500">{user?.full_name} {user?.role === 'admin' && <span className="bg-red-100 text-red-700 px-2 rounded text-xs ml-1">Admin</span>}</p></div></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
+        <header className="bg-white shadow border-b-4 border-red-500"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => { setSelectedBusiness(null); setSelectedSupplier(null); setSearchQuery(''); }} className="text-2xl text-black">←</button><div><h1 className="text-xl font-bold">{selectedBusiness.name}</h1><p className="text-sm text-gray-500">{user?.full_name} {user?.role === 'admin' && <span className="bg-red-100 text-red-700 px-2 rounded text-xs ml-1">Admin</span>}</p></div></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
         <main className="max-w-7xl mx-auto px-4 py-6">
-          <div className={`rounded-2xl p-6 text-white mb-6 ${totalDebt > 0 ? 'bg-gradient-to-r from-red-500 to-red-700' : 'bg-gradient-to-r from-green-500 to-green-700'}`}><p className="text-white/80 text-sm">Toplam {totalDebt > 0 ? 'Borç' : 'Durum'}</p><p className="text-4xl font-bold">{formatMoney(Math.abs(totalDebt))}</p><p className="text-white/80 text-sm mt-2">{getBusinessSuppliers().length} toptancı</p></div>
+          <div className={`rounded-2xl p-6 text-white mb-6 ${totalDebt > 0 ? 'bg-gradient-to-r from-red-500 to-red-700' : 'bg-gradient-to-r from-black to-red-700'}`}><p className="text-white/80 text-sm">Toplam {totalDebt > 0 ? 'Borç' : 'Durum'}</p><p className="text-4xl font-bold">{formatMoney(Math.abs(totalDebt))}</p><p className="text-white/80 text-sm mt-2">{getBusinessSuppliers().length} toptancı</p></div>
           <div className="grid md:grid-cols-2 gap-6">
             <div className="bg-white rounded-xl shadow p-6">
-              <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">Toptancılar</h2><button onClick={() => setShowAddSupplier(true)} className="bg-blue-500 text-white px-4 py-2 rounded-lg text-sm">+ Ekle</button></div>
+              <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">Toptancılar</h2><button onClick={() => setShowAddSupplier(true)} className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm">+ Ekle</button></div>
               <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="🔍 Ara..." className="w-full px-4 py-2 border-2 rounded-lg mb-4" />
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                {getFilteredSuppliers().map(s => { const bal = getSupplierBalance(s.id); return (<div key={s.id} onClick={() => setSelectedSupplier(s)} className={`p-4 rounded-lg cursor-pointer ${selectedSupplier?.id === s.id ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-50'}`}><div className="flex justify-between"><div><p className="font-semibold">{s.name}</p>{s.phone && <p className="text-sm text-gray-500">{s.phone}</p>}</div><div className="text-right"><p className={`font-bold ${bal > 0 ? 'text-red-600' : bal < 0 ? 'text-green-600' : 'text-gray-600'}`}>{formatMoney(Math.abs(bal))}</p><p className={`text-xs ${bal > 0 ? 'text-red-500' : bal < 0 ? 'text-green-500' : 'text-gray-400'}`}>{bal > 0 ? 'Borç' : bal < 0 ? 'Alacak' : 'Eşit'}</p></div></div></div>); })}
+                {getFilteredSuppliers().map(s => { const bal = getSupplierBalance(s.id); return (<div key={s.id} onClick={() => setSelectedSupplier(s)} className={`p-4 rounded-lg cursor-pointer ${selectedSupplier?.id === s.id ? 'bg-gray-100 border-2 border-black' : 'bg-gray-50'}`}><div className="flex justify-between"><div><p className="font-semibold">{s.name}</p>{s.phone && <p className="text-sm text-gray-500">{s.phone}</p>}</div><div className="text-right"><p className={`font-bold ${bal > 0 ? 'text-red-600' : bal < 0 ? 'text-gray-900' : 'text-gray-600'}`}>{formatMoney(Math.abs(bal))}</p><p className={`text-xs ${bal > 0 ? 'text-red-500' : bal < 0 ? 'text-gray-900' : 'text-gray-400'}`}>{bal > 0 ? 'Borç' : bal < 0 ? 'Alacak' : 'Eşit'}</p></div></div></div>); })}
                 {getFilteredSuppliers().length === 0 && <p className="text-center text-gray-500 py-8">Toptancı yok</p>}
               </div>
             </div>
@@ -1008,28 +1149,27 @@ export default function App() {
                   <div><h2 className="text-xl font-bold">{selectedSupplier.name}</h2>{selectedSupplier.phone && <p className="text-gray-500">{selectedSupplier.phone}</p>}</div>
                   {user?.role === 'admin' && (
                     <div className="flex gap-1">
-                      <button onClick={() => openEditSupplier(selectedSupplier)} className="bg-blue-100 text-blue-600 px-3 py-1 rounded-lg text-sm">✏️</button>
+                      <button onClick={() => openEditSupplier(selectedSupplier)} className="bg-gray-100 text-black px-3 py-1 rounded-lg text-sm">✏️</button>
                       <button onClick={() => initiateDelete('supplier', selectedSupplier.id, selectedSupplier.name)} className="bg-red-100 text-red-600 px-3 py-1 rounded-lg text-sm">🗑️</button>
                     </div>
                   )}
                 </div>
-                <div className="flex gap-2 mb-4"><button onClick={() => setShowAddTransaction('ALIM')} className="flex-1 bg-red-500 text-white py-3 rounded-lg font-semibold">+ Mal Alımı</button><button onClick={() => setShowAddTransaction('ODEME')} className="flex-1 bg-green-500 text-white py-3 rounded-lg font-semibold">+ Ödeme</button></div>
+                <div className="flex gap-2 mb-4"><button onClick={() => setShowAddTransaction('ALIM')} className="flex-1 bg-red-500 text-white py-3 rounded-lg font-semibold">+ Mal Alımı</button><button onClick={() => setShowAddTransaction('ODEME')} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">+ Ödeme</button></div>
                 <div className="border-t pt-4"><h3 className="font-semibold mb-3">İşlemler</h3><div className="space-y-2 max-h-80 overflow-y-auto">
                   {transactions.filter(t => t.supplier_id === selectedSupplier.id).map(tx => (
                     <div key={tx.id} className={`p-3 bg-gray-50 rounded-lg border-l-4 ${tx.type === 'ALIM' ? 'border-l-red-500' : 'border-l-green-500'}`}>
                       <div className="flex justify-between items-start">
                         <div>
-                          <p className={`font-semibold ${tx.type === 'ALIM' ? 'text-red-600' : 'text-green-600'}`}>{tx.type === 'ALIM' ? '📦 Alım' : '💰 Ödeme'}</p>
+                          <p className={`font-semibold ${tx.type === 'ALIM' ? 'text-red-600' : 'text-gray-900'}`}>{tx.type === 'ALIM' ? '📦 Alım' : '💰 Ödeme'}</p>
                           <p className="text-xs text-gray-500">{formatDateTR(tx.date)} - {formatTimeTR(tx.created_at)}</p>
                           <p className="text-xs text-gray-400">{getPaymentLabel(tx.payment_method)}</p>
                           {tx.description && <p className="text-xs text-gray-400">{tx.description}</p>}
-                          <p className="text-xs text-blue-500">👤 {tx.fullName}</p>
-                          {tx.updated_by_name && <p className="text-xs text-orange-500">✏️ Düzenleyen: {tx.updated_by_name}</p>}
-                          {tx.invoice_url && (<button onClick={() => setViewInvoice(tx.invoice_url)} className="text-xs text-purple-600 mt-1 hover:underline">📄 Faturayı Gör</button>)}
+                          <p className="text-xs text-black">👤 {tx.fullName}</p>
+                          {tx.invoice_url && (<button onClick={() => setViewInvoice(tx.invoice_url)} className="text-xs text-black mt-1 hover:underline">📄 Faturayı Gör</button>)}
                         </div>
                         <div className="flex items-center gap-2">
-                          <p className={`font-bold ${tx.type === 'ALIM' ? 'text-red-600' : 'text-green-600'}`}>{tx.type === 'ALIM' ? '+' : '-'}{formatMoney(tx.amount)}</p>
-                          {canEdit(tx.date) && (<div className="flex flex-col gap-1"><button onClick={() => openEditTransaction(tx)} className="bg-blue-100 text-blue-500 p-1 rounded text-xs">✏️</button><button onClick={() => initiateDelete('transaction', tx.id, `${formatDateTR(tx.date)} - ${formatMoney(tx.amount)}`)} className="bg-red-100 text-red-500 p-1 rounded text-xs">🗑️</button></div>)}
+                          <p className={`font-bold ${tx.type === 'ALIM' ? 'text-red-600' : 'text-gray-900'}`}>{tx.type === 'ALIM' ? '+' : '-'}{formatMoney(tx.amount)}</p>
+                          {user?.role === 'admin' && (<div className="flex flex-col gap-1"><button onClick={() => openEditTransaction(tx)} className="bg-gray-100 text-black p-1 rounded text-xs">✏️</button><button onClick={() => initiateDelete('transaction', tx.id, `${formatDateTR(tx.date)} - ${formatMoney(tx.amount)}`)} className="bg-red-100 text-red-500 p-1 rounded text-xs">🗑️</button></div>)}
                         </div>
                       </div>
                     </div>
@@ -1039,18 +1179,206 @@ export default function App() {
               </>) : (<div className="flex flex-col items-center justify-center h-full text-gray-500 py-20"><p className="text-5xl mb-4">👈</p><p>Toptancı seçin</p></div>)}
             </div>
           </div>
-          <RecentEditsBox type="transactions" title="Son Düzenlemeler - Toptancı İşlemleri" />
         </main>
         
-        {showAddSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-blue-600">Yeni Toptancı</h3><div className="space-y-4"><div><label className="text-sm font-medium">Ad *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Telefon</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Not</label><textarea value={supplierForm.notes} onChange={(e) => setSupplierForm({...supplierForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowAddSupplier(false)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddSupplier} className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold">Ekle</button></div></div></div>)}
+        {showAddSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-black">Yeni Toptancı</h3><div className="space-y-4"><div><label className="text-sm font-medium">Ad *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Telefon</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Not</label><textarea value={supplierForm.notes} onChange={(e) => setSupplierForm({...supplierForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowAddSupplier(false)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddSupplier} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Ekle</button></div></div></div>)}
         
-        {showEditSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-blue-600">✏️ Toptancı Düzenle</h3><div className="space-y-4"><div><label className="text-sm font-medium">Ad *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Telefon</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Not</label><textarea value={supplierForm.notes} onChange={(e) => setSupplierForm({...supplierForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowEditSupplier(null); setSupplierForm({ name: '', phone: '', notes: '' }); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleEditSupplier} className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
+        {showEditSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-black">✏️ Toptancı Düzenle</h3><div className="space-y-4"><div><label className="text-sm font-medium">Ad *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Telefon</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Not</label><textarea value={supplierForm.notes} onChange={(e) => setSupplierForm({...supplierForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowEditSupplier(null); setSupplierForm({ name: '', phone: '', notes: '' }); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleEditSupplier} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
         
-        {showAddTransaction && selectedSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-md my-8"><h3 className={`text-xl font-bold mb-4 ${showAddTransaction === 'ALIM' ? 'text-red-600' : 'text-green-600'}`}>{showAddTransaction === 'ALIM' ? '📦 Mal Alımı' : '💰 Ödeme'}</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tutar *</label><input type="number" value={transactionForm.amount} onChange={(e) => setTransactionForm({...transactionForm, amount: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div><div><label className="text-sm font-medium">Tarih *</label><input type="date" value={transactionForm.date} onChange={(e) => setTransactionForm({...transactionForm, date: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /><p className="text-sm text-gray-600 mt-1">{formatDateTR(transactionForm.date)}</p></div><div><label className="text-sm font-medium">Ödeme Biçimi</label><select value={transactionForm.payment_method} onChange={(e) => setTransactionForm({...transactionForm, payment_method: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg"><option value="nakit">💵 Nakit</option><option value="kredi_karti">💳 Kredi Kartı</option><option value="cek">📄 Çek</option><option value="senet">📃 Senet</option></select></div><div><label className="text-sm font-medium">Açıklama</label><input type="text" value={transactionForm.description} onChange={(e) => setTransactionForm({...transactionForm, description: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">📄 Fatura Ekle</label><input type="file" accept="image/*,.pdf" onChange={(e) => setTransactionForm({...transactionForm, invoice: e.target.files[0]})} className="w-full px-4 py-2 border-2 rounded-lg text-sm" />{transactionForm.invoice && <p className="text-xs text-green-600 mt-1">✅ {transactionForm.invoice.name}</p>}{uploadingInvoice && <p className="text-xs text-blue-600 mt-1">⏳ Yükleniyor...</p>}</div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowAddTransaction(null)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddTransaction} disabled={loading || uploadingInvoice} className={`flex-1 text-white py-3 rounded-lg font-semibold ${showAddTransaction === 'ALIM' ? 'bg-red-500' : 'bg-green-500'}`}>Kaydet</button></div></div></div>)}
+        {showAddTransaction && selectedSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-md my-8"><h3 className={`text-xl font-bold mb-4 ${showAddTransaction === 'ALIM' ? 'text-red-600' : 'text-gray-900'}`}>{showAddTransaction === 'ALIM' ? '📦 Mal Alımı' : '💰 Ödeme'}</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tutar *</label><input type="number" value={transactionForm.amount} onChange={(e) => setTransactionForm({...transactionForm, amount: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div><div><label className="text-sm font-medium">Tarih *</label><input type="date" value={transactionForm.date} onChange={(e) => setTransactionForm({...transactionForm, date: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /><p className="text-sm text-gray-600 mt-1">{formatDateTR(transactionForm.date)}</p></div><div><label className="text-sm font-medium">Ödeme Biçimi</label><select value={transactionForm.payment_method} onChange={(e) => setTransactionForm({...transactionForm, payment_method: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg"><option value="nakit">💵 Nakit</option><option value="kredi_karti">💳 Kredi Kartı</option><option value="cek">📄 Çek</option><option value="senet">📃 Senet</option></select></div><div><label className="text-sm font-medium">Açıklama</label><input type="text" value={transactionForm.description} onChange={(e) => setTransactionForm({...transactionForm, description: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">📄 Fatura Ekle</label><input type="file" accept="image/*,.pdf" onChange={(e) => setTransactionForm({...transactionForm, invoice: e.target.files[0]})} className="w-full px-4 py-2 border-2 rounded-lg text-sm" />{transactionForm.invoice && <p className="text-xs text-gray-900 mt-1">✅ {transactionForm.invoice.name}</p>}{uploadingInvoice && <p className="text-xs text-black mt-1">⏳ Yükleniyor...</p>}</div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowAddTransaction(null)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddTransaction} disabled={loading || uploadingInvoice} className={`flex-1 text-white py-3 rounded-lg font-semibold ${showAddTransaction === 'ALIM' ? 'bg-red-500' : 'bg-black'}`}>Kaydet</button></div></div></div>)}
         
-        {showEditTransaction && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-blue-600">✏️ İşlem Düzenle</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tutar</label><input type="number" value={transactionForm.amount} onChange={(e) => setTransactionForm({...transactionForm, amount: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Ödeme Biçimi</label><select value={transactionForm.payment_method} onChange={(e) => setTransactionForm({...transactionForm, payment_method: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg"><option value="nakit">💵 Nakit</option><option value="kredi_karti">💳 Kredi Kartı</option><option value="cek">📄 Çek</option><option value="senet">📃 Senet</option></select></div><div><label className="text-sm font-medium">Açıklama</label><input type="text" value={transactionForm.description} onChange={(e) => setTransactionForm({...transactionForm, description: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">📄 Yeni Fatura</label><input type="file" accept="image/*,.pdf" onChange={(e) => setTransactionForm({...transactionForm, invoice: e.target.files[0]})} className="w-full px-4 py-2 border-2 rounded-lg text-sm" />{showEditTransaction.invoice_url && !transactionForm.invoice && <p className="text-xs text-blue-600 mt-1">📄 Mevcut fatura var</p>}{transactionForm.invoice && <p className="text-xs text-green-600 mt-1">✅ {transactionForm.invoice.name}</p>}</div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowEditTransaction(null)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleEditTransaction} disabled={loading || uploadingInvoice} className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
+        {showEditTransaction && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-black">✏️ İşlem Düzenle</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tutar</label><input type="number" value={transactionForm.amount} onChange={(e) => setTransactionForm({...transactionForm, amount: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Ödeme Biçimi</label><select value={transactionForm.payment_method} onChange={(e) => setTransactionForm({...transactionForm, payment_method: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg"><option value="nakit">💵 Nakit</option><option value="kredi_karti">💳 Kredi Kartı</option><option value="cek">📄 Çek</option><option value="senet">📃 Senet</option></select></div><div><label className="text-sm font-medium">Açıklama</label><input type="text" value={transactionForm.description} onChange={(e) => setTransactionForm({...transactionForm, description: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">📄 Yeni Fatura</label><input type="file" accept="image/*,.pdf" onChange={(e) => setTransactionForm({...transactionForm, invoice: e.target.files[0]})} className="w-full px-4 py-2 border-2 rounded-lg text-sm" />{showEditTransaction.invoice_url && !transactionForm.invoice && <p className="text-xs text-black mt-1">📄 Mevcut fatura var</p>}{transactionForm.invoice && <p className="text-xs text-gray-900 mt-1">✅ {transactionForm.invoice.name}</p>}</div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowEditTransaction(null)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleEditTransaction} disabled={loading || uploadingInvoice} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
         
         <DeleteConfirmModal />
+      </div>
+    );
+  }
+
+  // ============ MAAŞ TAKİBİ (sadece admin) ============
+  if (screen === 'maas' && user?.role === 'admin') {
+    const sorted = getSortedEmployees();
+    const totalDue = employees.reduce((acc, e) => acc + salaryMonths.reduce((s, m) => s + getSalaryDue(e, m), 0), 0);
+    const totalPaid = employees.reduce((acc, e) => acc + salaryMonths.reduce((s, m) => s + getSalaryPaid(e, m), 0), 0);
+    const emp = selectedEmployee ? employees.find(e => e.id === selectedEmployee.id) : null;
+
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <LoadingOverlay />
+        <header className="bg-white shadow border-b-4 border-red-600"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => { setScreen('menu'); setSelectedEmployee(null); }} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">🧾 Maaş Takibi</h1><span className="bg-black text-white text-xs px-2 py-1 rounded-full">Sadece Admin</span></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
+
+        <main className="max-w-7xl mx-auto px-4 py-6">
+          <div className="mb-2 text-sm text-gray-500">Haziran – Eylül {salaryYear}</div>
+
+          {/* Özet kartları */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            <div className="bg-white rounded-xl p-4 shadow"><p className="text-sm text-gray-500">Personel</p><p className="text-2xl font-bold text-gray-900">{employees.length}</p></div>
+            <div className="bg-white rounded-xl p-4 shadow"><p className="text-sm text-gray-500">Toplam Maaş Yükü</p><p className="text-2xl font-bold text-gray-900">{formatMoney(totalDue)}</p></div>
+            <div className="bg-white rounded-xl p-4 shadow"><p className="text-sm text-gray-500">Ödenen</p><p className="text-2xl font-bold text-gray-900">{formatMoney(totalPaid)}</p></div>
+            <div className="bg-white rounded-xl p-4 shadow border-l-4 border-red-600"><p className="text-sm text-gray-500">Kalan Borç</p><p className="text-2xl font-bold text-red-600">{formatMoney(totalDue - totalPaid)}</p></div>
+          </div>
+
+          {/* Kontroller */}
+          <div className="flex flex-wrap gap-2 items-center mb-4">
+            <span className="text-sm text-gray-600">Sırala:</span>
+            <select value={salarySortBy} onChange={(e) => setSalarySortBy(e.target.value)} className="px-3 py-2 border-2 rounded-lg text-sm">
+              <option value="rem-desc">Kalan: büyükten küçüğe</option>
+              <option value="rem-asc">Kalan: küçükten büyüğe</option>
+              <option value="salary-desc">Maaş: büyükten küçüğe</option>
+              <option value="salary-asc">Maaş: küçükten büyüğe</option>
+              <option value="name">İsme göre (A-Z)</option>
+              <option value="manual">Ekleme sırası</option>
+            </select>
+            <select value={salarySortMonth} onChange={(e) => setSalarySortMonth(parseInt(e.target.value, 10))} className="px-3 py-2 border-2 rounded-lg text-sm">
+              {salaryMonths.map(m => <option key={m} value={m}>{SALARY_MONTH_LABELS[m]} ayı</option>)}
+            </select>
+            <button onClick={() => { setShowAddEmployee(true); setError(''); }} className="ml-auto bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-700">+ Personel Ekle</button>
+          </div>
+
+          {/* Maaş tablosu */}
+          <div className="bg-white rounded-xl shadow overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b-2 border-red-600 text-gray-600">
+                  <th className="text-left p-3 font-semibold">Personel</th>
+                  {salaryMonths.map(m => <th key={m} className="text-right p-3 font-semibold">{SALARY_MONTH_LABELS[m]}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map(e => (
+                  <tr key={e.id} onClick={() => { setSelectedEmployee(e); }} className={`border-b cursor-pointer hover:bg-gray-50 ${emp && emp.id === e.id ? 'bg-gray-100' : ''}`}>
+                    <td className="p-3">
+                      <div className="flex items-center gap-2">
+                        <span className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xs font-semibold flex-shrink-0">{getEmpInitials(e.name)}</span>
+                        <span className="font-medium text-gray-800">{e.name}{e.end_month ? <span className="text-xs text-gray-400"> (çıkış: {SALARY_MONTH_LABELS[e.end_month]})</span> : ''}</span>
+                      </div>
+                    </td>
+                    {salaryMonths.map(m => {
+                      const due = getSalaryDue(e, m);
+                      const rem = getSalaryRemaining(e, m);
+                      return (
+                        <td key={m} className="p-3 text-right">
+                          {due === 0 ? <span className="text-gray-300">—</span> : rem === 0 ? (
+                            <span className="text-gray-900 font-semibold">✓ ödendi</span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 justify-end">
+                              <span className="text-red-600 font-semibold">{formatMoney(rem)}</span>
+                              <button onClick={(ev) => { ev.stopPropagation(); setEditSalaryModal({ employee: e, month: m }); setEditSalaryValue(String(due)); setError(''); }} className="text-gray-400 hover:text-black" title="Maaşı düzelt">✏️</button>
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+                {employees.length === 0 && <tr><td colSpan={salaryMonths.length + 1} className="text-center text-gray-400 py-10">Henüz personel eklenmedi.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Personel detay paneli */}
+          {emp && (() => {
+            const due = getSalaryDue(emp, salaryDetailMonth);
+            const pd = getSalaryPaid(emp, salaryDetailMonth);
+            const rem = getSalaryRemaining(emp, salaryDetailMonth);
+            const pct = due > 0 ? Math.min(100, Math.round((pd / due) * 100)) : 0;
+            const empPayments = salaryPayments.filter(p => p.employee_id === emp.id && p.month === salaryDetailMonth);
+            return (
+              <div className="bg-white rounded-xl shadow border-t-4 border-red-600 p-5 mt-6">
+                <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                  <div className="flex items-center gap-3">
+                    <span className="w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-sm font-semibold">{getEmpInitials(emp.name)}</span>
+                    <div>
+                      <p className="font-bold text-gray-800">{emp.name}</p>
+                      <p className="text-xs text-gray-500">Aylık baz maaş: {formatMoney(emp.base_salary)}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => { setTerminateModal(emp); setError(''); }} className="border-2 border-red-600 text-red-600 px-3 py-1.5 rounded-lg text-xs font-semibold">İşten çıkar / Sil</button>
+                </div>
+
+                <div className="flex gap-2 flex-wrap mb-4">
+                  {salaryMonths.map(m => (
+                    <button key={m} onClick={() => setSalaryDetailMonth(m)} className={`px-3 py-1 rounded-lg text-xs border-2 ${m === salaryDetailMonth ? 'border-red-600 text-red-600 bg-red-50' : 'border-gray-200 text-gray-500'}`}>{SALARY_MONTH_LABELS[m]}</button>
+                  ))}
+                </div>
+
+                {due === 0 ? (
+                  <p className="text-sm text-gray-400">Bu ay bu personel için maaş tahakkuk etmiyor.</p>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-3 gap-3 mb-3">
+                      <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Maaş</p><p className="text-lg font-bold text-gray-900">{formatMoney(due)}</p></div>
+                      <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Ödenen</p><p className="text-lg font-bold text-gray-900">{formatMoney(pd)}</p></div>
+                      <div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500">Kalan</p><p className={`text-lg font-bold ${rem > 0 ? 'text-red-600' : 'text-gray-900'}`}>{formatMoney(rem)}</p></div>
+                    </div>
+                    <div className="h-2 rounded-full bg-red-100 overflow-hidden mb-4"><div className="h-full bg-black" style={{ width: pct + '%' }}></div></div>
+
+                    <div className="flex gap-2 flex-wrap mb-3">
+                      <input type="number" value={salaryPaymentForm.amount} onChange={(e) => setSalaryPaymentForm({ ...salaryPaymentForm, amount: e.target.value })} placeholder="Ödenen tutar (₺)" className="flex-1 min-w-[130px] px-3 py-2 border-2 rounded-lg text-sm" />
+                      <input type="text" value={salaryPaymentForm.note} onChange={(e) => setSalaryPaymentForm({ ...salaryPaymentForm, note: e.target.value })} placeholder="Açıklama (ops.)" className="flex-1 min-w-[120px] px-3 py-2 border-2 rounded-lg text-sm" />
+                      <button onClick={handleAddSalaryPayment} disabled={loading} className="bg-black text-white px-4 py-2 rounded-lg text-sm font-semibold">+ Ödeme Ekle</button>
+                    </div>
+                    {error && <div className="bg-red-100 text-red-700 px-3 py-2 rounded-lg text-sm mb-3">{error}</div>}
+
+                    <p className="text-xs text-gray-600 font-semibold mb-1">Yapılan ödemeler</p>
+                    {empPayments.length === 0 ? (
+                      <p className="text-sm text-gray-400">Bu ay için henüz ödeme girilmedi.</p>
+                    ) : empPayments.map(p => (
+                      <div key={p.id} className="flex justify-between items-center py-2 border-b text-sm">
+                        <span className="text-gray-600">{p.note || 'Ödeme'}{p.fullName && user.role !== 'admin' ? ` · ${p.fullName}` : ''}<span className="text-gray-400 text-xs"> · {formatTimeTR(p.created_at)}</span></span>
+                        <span className="flex items-center gap-3"><span className="font-semibold text-gray-900">{formatMoney(p.amount)}</span><button onClick={() => handleDeleteSalaryPayment(p.id)} className="text-red-600">✕</button></span>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            );
+          })()}
+        </main>
+
+        {/* Personel ekleme modalı */}
+        {showAddEmployee && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl p-6 w-full max-w-md">
+              <h3 className="text-xl font-bold mb-4 text-red-600">🧾 Yeni Personel</h3>
+              <div className="space-y-4">
+                <div><label className="text-sm font-medium">Ad Soyad *</label><input type="text" value={employeeForm.name} onChange={(e) => setEmployeeForm({ ...employeeForm, name: e.target.value })} className="w-full px-4 py-2 border-2 rounded-lg" /></div>
+                <div><label className="text-sm font-medium">Aylık Maaş (₺) *</label><input type="number" value={employeeForm.salary} onChange={(e) => setEmployeeForm({ ...employeeForm, salary: e.target.value })} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div>
+                <div><label className="text-sm font-medium">Başlangıç ayı</label><select value={employeeForm.startMonth} onChange={(e) => setEmployeeForm({ ...employeeForm, startMonth: parseInt(e.target.value, 10) })} className="w-full px-4 py-2 border-2 rounded-lg">{salaryMonths.map(m => <option key={m} value={m}>{SALARY_MONTH_LABELS[m]}'den itibaren</option>)}</select></div>
+              </div>
+              {error && <div className="bg-red-100 text-red-700 px-3 py-2 rounded-lg text-sm mt-3">{error}</div>}
+              <div className="flex gap-2 mt-6"><button onClick={() => { setShowAddEmployee(false); setError(''); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddEmployee} disabled={loading} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Ekle</button></div>
+            </div>
+          </div>
+        )}
+
+        {/* Maaş düzeltme modalı */}
+        {editSalaryModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl p-6 w-full max-w-md">
+              <h3 className="text-xl font-bold mb-1 text-black">✏️ Maaş Düzelt</h3>
+              <p className="text-sm text-gray-500 mb-4">{editSalaryModal.employee.name} · {SALARY_MONTH_LABELS[editSalaryModal.month]} ve sonraki aylara uygulanır</p>
+              <input type="number" value={editSalaryValue} onChange={(e) => setEditSalaryValue(e.target.value)} className="w-full px-4 py-2 border-2 rounded-lg" />
+              {error && <div className="bg-red-100 text-red-700 px-3 py-2 rounded-lg text-sm mt-3">{error}</div>}
+              <div className="flex gap-2 mt-6"><button onClick={() => { setEditSalaryModal(null); setError(''); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleEditSalary} disabled={loading} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Güncelle</button></div>
+            </div>
+          </div>
+        )}
+
+        {/* İşten çıkarma / silme modalı */}
+        {terminateModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl p-6 w-full max-w-md">
+              <h3 className="text-xl font-bold mb-1 text-red-600">İşten Çıkar / Sil</h3>
+              <p className="text-sm text-gray-500 mb-4">{terminateModal.name}</p>
+              <p className="text-sm text-gray-700 mb-2">Çıkış ayını seç (o aydan sonrası maaş tahakkuku durur):</p>
+              <div className="flex gap-2 flex-wrap mb-4">
+                {salaryMonths.map(m => <button key={m} onClick={() => handleTerminateEmployee(m)} className="px-3 py-1.5 rounded-lg text-sm border-2 border-gray-200 hover:border-red-600 hover:text-red-600">{SALARY_MONTH_LABELS[m]}</button>)}
+              </div>
+              {error && <div className="bg-red-100 text-red-700 px-3 py-2 rounded-lg text-sm mb-3">{error}</div>}
+              <div className="flex gap-2 mt-2"><button onClick={() => { setTerminateModal(null); setError(''); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleDeleteEmployee} disabled={loading} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Tamamen Sil</button></div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
