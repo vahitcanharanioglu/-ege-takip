@@ -35,6 +35,7 @@ export default function App() {
   const [reportForm, setReportForm] = useState({ date: getTurkeyDate(), credit_card: '', cash: '', meal_cards: '', actual_cash: '', notes: '' });
   const [expensesList, setExpensesList] = useState([]);
   const [newExpense, setNewExpense] = useState({ description: '', amount: '', employee_id: '' });
+  const [expenseSearch, setExpenseSearch] = useState({ open: false, query: '', from: '', to: '' });
   const [cashMovementForm, setCashMovementForm] = useState({ amount: '', description: '', date: getTurkeyDate() });
   const [error, setError] = useState('');
   const [uploadingInvoice, setUploadingInvoice] = useState(false);
@@ -520,6 +521,31 @@ export default function App() {
       await supabase.from('salary_payments').delete().in('expense_id', ids);
       await loadSalaryPayments();
     }
+  };
+
+  // ---- GİDER ARAMA ----
+  // Seçili işletmenin tüm günlerindeki giderlerde açıklama veya personel adına göre ara
+  const getExpenseSearchResults = () => {
+    if (!selectedBusiness) return [];
+    const q = expenseSearch.query.trim().toLocaleLowerCase('tr-TR');
+    const { from, to } = expenseSearch;
+    if (!q && !from && !to) return [];
+    const results = [];
+    dailyReports
+      .filter(r => r.business_id === selectedBusiness.id)
+      .forEach(r => {
+        if (from && r.date < from) return;
+        if (to && r.date > to) return;
+        (r.expenses || []).forEach(e => {
+          const desc = (e.description || '').toLocaleLowerCase('tr-TR');
+          const empName = e.employee_id ? getEmployeeName(e.employee_id).toLocaleLowerCase('tr-TR') : '';
+          if (!q || desc.includes(q) || empName.includes(q)) {
+            results.push({ ...e, date: r.date });
+          }
+        });
+      });
+    results.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    return results;
   };
 
   // ---- MAAŞ MODÜLÜ yardımcı fonksiyonlar ----
@@ -1211,8 +1237,51 @@ export default function App() {
               <div className="text-center"><div className="text-2xl font-bold border-2 rounded-lg px-6 py-3 bg-gray-50">{formatDateTR(selectedDate)}</div><input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="mt-2 text-sm border rounded-lg px-3 py-1" /></div>
               <button onClick={() => changeDate(1)} className="bg-gray-100 text-black px-4 py-2 rounded-lg font-semibold">→</button>
             </div>
-            <div className="flex gap-2 mt-4 justify-center"><button onClick={() => setSelectedDate(getTurkeyDate())} className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm">Bugün</button></div>
+            <div className="flex gap-2 mt-4 justify-center"><button onClick={() => setSelectedDate(getTurkeyDate())} className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm">Bugün</button><button onClick={() => setExpenseSearch({ ...expenseSearch, open: !expenseSearch.open })} className="bg-black text-white px-4 py-2 rounded-lg text-sm">🔍 Gider Ara</button></div>
           </div>
+
+          {expenseSearch.open && (() => {
+            const results = getExpenseSearchResults();
+            const total = results.reduce((s, e) => s + Number(e.amount), 0);
+            const hasFilter = expenseSearch.query.trim() || expenseSearch.from || expenseSearch.to;
+            return (
+              <div className="bg-white rounded-xl shadow p-4 mb-6 border-2 border-black">
+                <div className="flex justify-between items-center mb-3">
+                  <p className="font-bold text-gray-800">🔍 Gider Ara</p>
+                  <button onClick={() => setExpenseSearch({ open: false, query: '', from: '', to: '' })} className="text-gray-400 text-sm">✕ Kapat</button>
+                </div>
+                <input type="text" value={expenseSearch.query} onChange={(e) => setExpenseSearch({ ...expenseSearch, query: e.target.value })} className="w-full px-4 py-2 border-2 rounded-lg mb-2" placeholder="Ara: Emre, Ambalajcı, personel adı, açıklama..." />
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div><label className="text-xs text-gray-500">Başlangıç (ops.)</label><input type="date" value={expenseSearch.from} onChange={(e) => setExpenseSearch({ ...expenseSearch, from: e.target.value })} className="w-full px-3 py-2 border-2 rounded-lg text-sm" /></div>
+                  <div><label className="text-xs text-gray-500">Bitiş (ops.)</label><input type="date" value={expenseSearch.to} onChange={(e) => setExpenseSearch({ ...expenseSearch, to: e.target.value })} className="w-full px-3 py-2 border-2 rounded-lg text-sm" /></div>
+                </div>
+                {hasFilter ? (
+                  <>
+                    <div className="flex justify-between items-center bg-red-50 border-2 border-red-200 rounded-lg px-3 py-2 mb-2">
+                      <span className="text-sm font-semibold text-red-700">{results.length} gider bulundu</span>
+                      <span className="font-bold text-red-700">{formatMoney(total)}</span>
+                    </div>
+                    <div className="max-h-72 overflow-y-auto">
+                      {results.length === 0 ? (
+                        <p className="text-sm text-gray-500 text-center py-4">Sonuç bulunamadı</p>
+                      ) : results.map((e, i) => (
+                        <div key={e.id || i} className="flex justify-between items-center bg-gray-50 p-2 rounded-lg mb-1">
+                          <div>
+                            <span className="text-sm">{e.description}</span>
+                            {e.employee_id && (<span className="ml-2 text-xs bg-black text-white px-1.5 py-0.5 rounded-full">👤 {getEmployeeName(e.employee_id)}</span>)}
+                            <span className="text-xs text-gray-400 block">{formatDateTR(e.date)}</span>
+                          </div>
+                          <span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-gray-400 text-center py-2">Arama yazın veya tarih aralığı seçin</p>
+                )}
+              </div>
+            );
+          })()}
           {(isToday || user?.role === 'admin') && !currentReport && (<button onClick={() => { setReportForm({...reportForm, date: selectedDate}); setExpensesList([]); setShowAddReport(true); }} className="w-full bg-gradient-to-r from-red-500 to-red-600 text-white py-4 rounded-xl font-semibold mb-6">+ Rapor Ekle</button>)}
           {currentReport ? (
             <div className="bg-white rounded-xl shadow p-6">
