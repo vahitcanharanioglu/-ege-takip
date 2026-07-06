@@ -765,6 +765,11 @@ export default function App() {
 
   // Kaydet butonuna basıldığında - önce onay sor
   const handleSaveReportClick = (type) => {
+    // Formda yazılıp + ile eklenmemiş gider varsa otomatik listeye ekle (kaybolmasın)
+    if (newExpense.description && newExpense.amount) {
+      setExpensesList([...expensesList, { id: 'temp_'+Date.now(), description: newExpense.description, amount: parseFloat(newExpense.amount), employee_id: newExpense.employee_id || null }]);
+      setNewExpense({ description: '', amount: '', employee_id: '' });
+    }
     setShowExpenseConfirm(type);
   };
 
