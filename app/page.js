@@ -34,7 +34,7 @@ export default function App() {
   const [transactionForm, setTransactionForm] = useState({ amount: '', date: getTurkeyDate(), description: '', payment_method: 'nakit', invoice: null });
   const [reportForm, setReportForm] = useState({ date: getTurkeyDate(), credit_card: '', cash: '', meal_cards: '', actual_cash: '', notes: '' });
   const [expensesList, setExpensesList] = useState([]);
-  const [newExpense, setNewExpense] = useState({ description: '', amount: '', employee_id: '' });
+  const [newExpense, setNewExpense] = useState({ description: '', amount: '', employee_id: '', is_external: false });
   const [expenseSearch, setExpenseSearch] = useState({ open: false, query: '', from: '', to: '' });
   const [cashMovementForm, setCashMovementForm] = useState({ amount: '', description: '', date: getTurkeyDate() });
   const [error, setError] = useState('');
@@ -446,17 +446,20 @@ export default function App() {
 
   const handleAddExpense = () => {
     if (!newExpense.description || !newExpense.amount) return;
-    setExpensesList([...expensesList, { id: 'temp_'+Date.now(), description: newExpense.description, amount: parseFloat(newExpense.amount), employee_id: newExpense.employee_id || null }]);
-    setNewExpense({ description: '', amount: '', employee_id: '' });
+    setExpensesList([...expensesList, { id: 'temp_'+Date.now(), description: newExpense.description, amount: parseFloat(newExpense.amount), employee_id: newExpense.employee_id || null, is_external: !!newExpense.is_external }]);
+    setNewExpense({ description: '', amount: '', employee_id: '', is_external: false });
   };
 
   const handleRemoveExpense = (id) => setExpensesList(expensesList.filter(e => e.id !== id));
   // Gider satırını düzenlemek için değerleri forma geri yükle
   const startEditExpense = (exp) => {
-    setNewExpense({ description: exp.description || '', amount: String(exp.amount), employee_id: exp.employee_id || '' });
+    setNewExpense({ description: exp.description || '', amount: String(exp.amount), employee_id: exp.employee_id || '', is_external: !!exp.is_external });
     setExpensesList(expensesList.filter(e => e.id !== exp.id));
   };
-  const getTotalExpenses = () => expensesList.reduce((s, e) => s + e.amount, 0);
+  // Kasadan düşen (normal) giderler toplamı - dışarıdan gelenler HARİÇ
+  const getTotalExpenses = () => expensesList.filter(e => !e.is_external).reduce((s, e) => s + e.amount, 0);
+  // Dışarıdan gelen (havale) toplamı - kasaya katılmaz, ayrı takip
+  const getTotalExternal = () => expensesList.filter(e => e.is_external).reduce((s, e) => s + e.amount, 0);
 
   // ---- GİDER -> MAAŞ ENTEGRASYONU ----
   // Aktif personeller (işten çıkmamış olanlar)
@@ -505,7 +508,7 @@ export default function App() {
           year: part.year,
           month: part.month,
           amount: part.amount,
-          note: `🍽️ Gün sonu gideri${exp.description ? ' - ' + exp.description : ''}`,
+          note: `${exp.is_external ? '💸 Dışarıdan (havale)' : '🍽️ Gün sonu gideri'}${exp.description ? ' - ' + exp.description : ''}`,
           created_by: user.id,
           expense_id: exp.id,
         });
@@ -767,8 +770,8 @@ export default function App() {
   const handleSaveReportClick = (type) => {
     // Formda yazılıp + ile eklenmemiş gider varsa otomatik listeye ekle (kaybolmasın)
     if (newExpense.description && newExpense.amount) {
-      setExpensesList([...expensesList, { id: 'temp_'+Date.now(), description: newExpense.description, amount: parseFloat(newExpense.amount), employee_id: newExpense.employee_id || null }]);
-      setNewExpense({ description: '', amount: '', employee_id: '' });
+      setExpensesList([...expensesList, { id: 'temp_'+Date.now(), description: newExpense.description, amount: parseFloat(newExpense.amount), employee_id: newExpense.employee_id || null, is_external: !!newExpense.is_external }]);
+      setNewExpense({ description: '', amount: '', employee_id: '', is_external: false });
     }
     setShowExpenseConfirm(type);
   };
@@ -798,7 +801,7 @@ export default function App() {
 
       let expenses = [];
       if (reportData && expensesList.length > 0) {
-        const expensesData = expensesList.map(e => ({ daily_report_id: reportData.id, description: e.description, amount: e.amount, employee_id: e.employee_id || null }));
+        const expensesData = expensesList.map(e => ({ daily_report_id: reportData.id, description: e.description, amount: e.amount, employee_id: e.employee_id || null, is_external: !!e.is_external }));
         const { data: expData, error: expError } = await supabase.from('expenses').insert(expensesData).select();
         if (expError) throw expError;
         if (expData) {
@@ -845,7 +848,7 @@ export default function App() {
       
       let newExpenses = [];
       if (expensesList.length > 0) {
-        const expensesData = expensesList.map(e => ({ daily_report_id: currentReport.id, description: e.description, amount: e.amount, employee_id: e.employee_id || null }));
+        const expensesData = expensesList.map(e => ({ daily_report_id: currentReport.id, description: e.description, amount: e.amount, employee_id: e.employee_id || null, is_external: !!e.is_external }));
         const { data: expData, error: expError } = await supabase.from('expenses').insert(expensesData).select();
         if (expError) throw expError;
         if (expData) {
@@ -935,7 +938,10 @@ export default function App() {
   const getBusinessReports = (bid) => dailyReports.filter(r => r.business_id === bid);
   const getReportByDate = (bid, date) => dailyReports.find(r => r.business_id === bid && r.date === date);
   const changeDate = (days) => { const d = new Date(selectedDate); d.setDate(d.getDate() + days); setSelectedDate(d.toISOString().split('T')[0]); };
-  const getExpTotal = (exps) => (exps || []).reduce((s, e) => s + Number(e.amount), 0);
+  // Kasadan düşen giderler (dışarıdan gelenler HARİÇ) - kasa hesabında bunu kullan
+  const getExpTotal = (exps) => (exps || []).filter(e => !e.is_external).reduce((s, e) => s + Number(e.amount), 0);
+  // Dışarıdan gelen (havale) toplamı - kasaya katılmaz
+  const getExtTotal = (exps) => (exps || []).filter(e => e.is_external).reduce((s, e) => s + Number(e.amount), 0);
   const calcCashDiff = (r) => Number(r.actual_cash) - (Number(r.cash) - getExpTotal(r.expenses));
 
   const getDailySummary = (date) => {
@@ -966,9 +972,9 @@ export default function App() {
 
   if (initialLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-black to-red-700">
+      <div className="min-h-screen flex items-center justify-center bg-black">
         <div className="bg-white p-8 rounded-2xl shadow-xl flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-red-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-12 h-12 border-4 border-black border-t-transparent rounded-full animate-spin"></div>
           <p className="text-gray-700 font-medium">Yükleniyor...</p>
         </div>
       </div>
@@ -978,7 +984,7 @@ export default function App() {
   const LoadingOverlay = () => loading ? (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[200]">
       <div className="bg-white p-6 rounded-xl shadow-xl flex items-center gap-3">
-        <div className="w-6 h-6 border-4 border-red-500 border-t-transparent rounded-full animate-spin"></div>
+        <div className="w-6 h-6 border-4 border-black border-t-transparent rounded-full animate-spin"></div>
         <span className="text-gray-700 font-medium">Yükleniyor...</span>
       </div>
     </div>
@@ -990,9 +996,9 @@ export default function App() {
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[100]">
         <div className="bg-white rounded-xl p-6 w-full max-w-md">
           {deleteConfirm.step === 1 ? (
-            <><div className="text-center mb-6"><p className="text-5xl mb-4">⚠️</p><h3 className="text-xl font-bold text-red-600 mb-2">Silme Onayı (1/2)</h3><p className="text-gray-600">"{deleteConfirm.name}" silinecek.</p></div><div className="flex gap-2"><button onClick={cancelDelete} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={confirmDeleteStep1} className="flex-1 bg-red-500 text-white py-3 rounded-lg font-semibold">Devam</button></div></>
+            <><div className="text-center mb-6"><p className="text-5xl mb-4">⚠️</p><h3 className="text-xl font-bold text-black mb-2">Silme Onayı (1/2)</h3><p className="text-gray-600">"{deleteConfirm.name}" silinecek.</p></div><div className="flex gap-2"><button onClick={cancelDelete} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={confirmDeleteStep1} className="flex-1 bg-red-500 text-white py-3 rounded-lg font-semibold">Devam</button></div></>
           ) : (
-            <><div className="text-center mb-6"><p className="text-5xl mb-4">🚨</p><h3 className="text-xl font-bold text-red-600 mb-2">Son Onay (2/2)</h3><p className="text-gray-600">"{deleteConfirm.name}" kalıcı silinecek!</p></div><div className="flex gap-2"><button onClick={cancelDelete} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">Vazgeç</button><button onClick={confirmDeleteStep2} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Evet, Sil</button></div></>
+            <><div className="text-center mb-6"><p className="text-5xl mb-4">🚨</p><h3 className="text-xl font-bold text-black mb-2">Son Onay (2/2)</h3><p className="text-gray-600">"{deleteConfirm.name}" kalıcı silinecek!</p></div><div className="flex gap-2"><button onClick={cancelDelete} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">Vazgeç</button><button onClick={confirmDeleteStep2} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Evet, Sil</button></div></>
           )}
         </div>
       </div>
@@ -1007,7 +1013,7 @@ export default function App() {
         <div className="bg-white rounded-xl p-6 w-full max-w-md">
           <div className="text-center mb-6">
             <p className="text-5xl mb-4">📝</p>
-            <h3 className="text-xl font-bold text-red-600 mb-2">Gider Onayı</h3>
+            <h3 className="text-xl font-bold text-black mb-2">Gider Onayı</h3>
             <p className="text-gray-600">Gider girdiğinize emin misiniz?</p>
             {expensesList.length === 0 ? (
               <p className="text-red-500 mt-2 font-semibold">⚠️ Hiç gider girilmedi!</p>
@@ -1034,7 +1040,7 @@ export default function App() {
             <button onClick={() => setViewInvoice(null)} className="text-gray-500 text-2xl">×</button>
           </div>
           <img src={viewInvoice} alt="Fatura" className="max-w-full rounded-lg" />
-          <a href={viewInvoice} target="_blank" rel="noopener noreferrer" className="block mt-4 text-center bg-red-600 text-white py-2 rounded-lg">Tam Boyut Aç</a>
+          <a href={viewInvoice} target="_blank" rel="noopener noreferrer" className="block mt-4 text-center bg-black text-white py-2 rounded-lg">Tam Boyut Aç</a>
         </div>
       </div>
     );
@@ -1043,26 +1049,37 @@ export default function App() {
   // LOGIN
   if (screen === 'login') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-black to-red-700 p-4">
+      <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #f5f5f7 0%, #e8e8ec 50%, #dddde3 100%)' }}>
         <LoadingOverlay />
-        <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md">
-          <h1 className="text-3xl font-bold text-center text-red-600 mb-2">🏪 Ege Takip Sistemi</h1>
-          <p className="text-center text-gray-500 mb-6">Giriş Yapın</p>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Kullanıcı Adı</label>
-              <input type="text" value={loginForm.username} onChange={(e) => setLoginForm({...loginForm, username: e.target.value})} className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-red-500 focus:outline-none" placeholder="Kullanıcı adınız" />
+        {/* arka plan yumuşak ışık lekeleri - liquid glass derinliği */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-24 -left-24 w-96 h-96 rounded-full opacity-40" style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.9) 0%, transparent 70%)' }} />
+          <div className="absolute -bottom-32 -right-16 w-[28rem] h-[28rem] rounded-full opacity-30" style={{ background: 'radial-gradient(circle, rgba(180,180,190,0.6) 0%, transparent 70%)' }} />
+        </div>
+
+        <div className="relative w-full max-w-md">
+          {/* cam kart */}
+          <div className="rounded-3xl p-8 border border-white/60 shadow-xl" style={{ background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(20px) saturate(150%)', WebkitBackdropFilter: 'blur(20px) saturate(150%)', boxShadow: '0 8px 32px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.7)' }}>
+            <div className="flex flex-col items-center mb-8">
+              <img src="/ege-logo.png" alt="Ege" className="w-44 h-auto mb-3 select-none" draggable="false" />
+              <p className="text-gray-500 text-sm tracking-wide">Takip Sistemi</p>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Şifre</label>
-              <input type="password" value={loginForm.password} onChange={(e) => setLoginForm({...loginForm, password: e.target.value})} className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-red-500 focus:outline-none" placeholder="Şifreniz" onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1.5">Kullanıcı Adı</label>
+                <input type="text" value={loginForm.username} onChange={(e) => setLoginForm({...loginForm, username: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white/70 focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition" style={{ backdropFilter: 'blur(4px)' }} placeholder="Kullanıcı adınız" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1.5">Şifre</label>
+                <input type="password" value={loginForm.password} onChange={(e) => setLoginForm({...loginForm, password: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white/70 focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition" style={{ backdropFilter: 'blur(4px)' }} placeholder="Şifreniz" onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
+              </div>
+              <label className="flex items-center gap-3 cursor-pointer py-1">
+                <input type="checkbox" checked={loginForm.rememberMe} onChange={(e) => setLoginForm({...loginForm, rememberMe: e.target.checked})} className="w-5 h-5 rounded border-gray-300 accent-black" />
+                <span className="text-gray-600 text-sm font-medium">Beni Hatırla</span>
+              </label>
+              {error && <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-2.5 rounded-xl text-sm">{error}</div>}
+              <button onClick={handleLogin} disabled={loading} className="w-full bg-black text-white py-3.5 rounded-xl font-semibold hover:bg-gray-800 disabled:opacity-50 transition shadow-lg">Giriş Yap</button>
             </div>
-            <label className="flex items-center gap-3 cursor-pointer py-2">
-              <input type="checkbox" checked={loginForm.rememberMe} onChange={(e) => setLoginForm({...loginForm, rememberMe: e.target.checked})} className="w-5 h-5 rounded border-gray-300 text-red-600 focus:ring-red-500" />
-              <span className="text-gray-700 font-medium">Beni Hatırla</span>
-            </label>
-            {error && <div className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">{error}</div>}
-            <button onClick={handleLogin} disabled={loading} className="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 disabled:opacity-50 transition">Giriş Yap</button>
           </div>
         </div>
       </div>
@@ -1072,21 +1089,21 @@ export default function App() {
   // MENU
   if (screen === 'menu') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-black to-red-700 p-4">
+      <div className="min-h-screen bg-black p-4">
         <LoadingOverlay />
         <div className="max-w-lg mx-auto pt-12">
           <div className="text-center text-white mb-8">
-            <h1 className="text-3xl font-bold mb-2">🏪 Ege Takip Sistemi</h1>
-            <p className="text-xl text-white/90">Hoş geldin, {user?.full_name}</p>
-            {user?.role === 'admin' && <span className="inline-block mt-2 bg-white/20 px-3 py-1 rounded-full text-sm">👑 Admin</span>}
+            <img src="/ege-logo-white.png" alt="Ege" className="w-36 h-auto mx-auto mb-3 select-none" draggable="false" />
+            <p className="text-lg text-white/80">Hoş geldin, {user?.full_name}</p>
+            {user?.role === 'admin' && <span className="inline-block mt-2 bg-white/15 px-3 py-1 rounded-full text-sm">👑 Admin</span>}
           </div>
           <div className="space-y-4">
-            <button onClick={() => setScreen('toptanci')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-red-500"><span className="text-4xl">📦</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Toptancı Ödemeleri</p><p className="text-gray-500">Mal alımı ve ödeme takibi</p></div></button>
+            <button onClick={() => setScreen('toptanci')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-black"><span className="text-4xl">📦</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Toptancı Ödemeleri</p><p className="text-gray-500">Mal alımı ve ödeme takibi</p></div></button>
             <button onClick={() => setScreen('gunsonu')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-black"><span className="text-4xl">📊</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Gün Sonu</p><p className="text-gray-500">Günlük ciro ve kasa raporu</p></div></button>
             {user?.role === 'admin' && (<>
               <button onClick={() => setScreen('kasa')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-black"><span className="text-4xl">💰</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Kasa Hareketleri</p><p className="text-gray-500">Ödeme ve gelen para takibi</p></div></button>
               <button onClick={() => setScreen('ozet')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-black"><span className="text-4xl">📈</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Günlük Özet</p><p className="text-gray-500">Tüm işletmelerin toplamı</p></div></button>
-              <button onClick={() => setScreen('maas')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-red-600"><span className="text-4xl">🧾</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Maaş Takibi</p><p className="text-gray-500">Personel maaşları ve ödemeler</p></div></button>
+              <button onClick={() => setScreen('maas')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-black"><span className="text-4xl">🧾</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Maaş Takibi</p><p className="text-gray-500">Personel maaşları ve ödemeler</p></div></button>
             </>)}
           </div>
           <button onClick={handleLogout} className="w-full mt-8 text-white/80 hover:text-white py-2 transition">Çıkış Yap</button>
@@ -1101,7 +1118,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gray-100">
         <LoadingOverlay />
-        <header className="bg-white shadow border-b-4 border-black"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">📈 Günlük Özet</h1></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
+        <header className="bg-white shadow border-b-4 border-black"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">📈 Günlük Özet</h1></div><button onClick={handleLogout} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">Çıkış</button></div></header>
         <main className="max-w-4xl mx-auto px-4 py-6">
           <div className="bg-white rounded-xl shadow p-4 mb-6">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1116,11 +1133,11 @@ export default function App() {
           </div>
           
           <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="bg-gradient-to-r from-black to-red-700 rounded-2xl p-6 text-white">
+            <div className="bg-black rounded-2xl p-6 text-white">
               <p className="text-white/80 text-sm">Toplam Ciro</p>
               <p className="text-3xl font-bold">{formatMoney(summary.total)}</p>
             </div>
-            <div className="bg-gradient-to-r from-black to-red-700 rounded-2xl p-6 text-white">
+            <div className="bg-black rounded-2xl p-6 text-white">
               <p className="text-white/80 text-sm">Net Ciro (Giderler Düşülmüş)</p>
               <p className="text-3xl font-bold">{formatMoney(summary.netTotal)}</p>
             </div>
@@ -1176,7 +1193,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gray-100">
         <LoadingOverlay />
-        <header className="bg-white shadow border-b-4 border-black"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">💰 Kasa Hareketleri</h1></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
+        <header className="bg-white shadow border-b-4 border-black"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">💰 Kasa Hareketleri</h1></div><button onClick={handleLogout} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">Çıkış</button></div></header>
         <main className="max-w-4xl mx-auto px-4 py-6">
           <div className="bg-white rounded-xl shadow p-4 mb-6">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1233,7 +1250,7 @@ export default function App() {
       return (
         <div className="min-h-screen bg-gray-100">
           <LoadingOverlay />
-          <header className="bg-white shadow border-b-4 border-black"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">📊 Gün Sonu</h1></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
+          <header className="bg-white shadow border-b-4 border-black"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">📊 Gün Sonu</h1></div><button onClick={handleLogout} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">Çıkış</button></div></header>
           <main className="max-w-lg mx-auto px-4 py-8"><div className="space-y-4">{allowedBusinesses.map(b => (<button key={b.id} onClick={() => setSelectedBusiness(b)} className="w-full bg-white p-6 rounded-xl shadow text-left border-l-4 border-black"><p className="text-xl font-bold">{b.name}</p><p className="text-sm text-gray-500">{getBusinessReports(b.id).length} rapor</p></button>))}</div></main>
         </div>
       );
@@ -1244,7 +1261,7 @@ export default function App() {
       <div className="min-h-screen bg-gray-100">
         <LoadingOverlay />
         <ExpenseConfirmModal />
-        <header className="bg-white shadow border-b-4 border-black"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setSelectedBusiness(null)} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">📊 {selectedBusiness.name}</h1></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
+        <header className="bg-white shadow border-b-4 border-black"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setSelectedBusiness(null)} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">📊 {selectedBusiness.name}</h1></div><button onClick={handleLogout} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">Çıkış</button></div></header>
         <main className="max-w-4xl mx-auto px-4 py-6">
           <div className="bg-white rounded-xl shadow p-4 mb-6">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1252,7 +1269,7 @@ export default function App() {
               <div className="text-center"><div className="text-2xl font-bold border-2 rounded-lg px-6 py-3 bg-gray-50">{formatDateTR(selectedDate)}</div><input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="mt-2 text-sm border rounded-lg px-3 py-1" /></div>
               <button onClick={() => changeDate(1)} className="bg-gray-100 text-black px-4 py-2 rounded-lg font-semibold">→</button>
             </div>
-            <div className="flex gap-2 mt-4 justify-center"><button onClick={() => setSelectedDate(getTurkeyDate())} className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm">Bugün</button><button onClick={() => setExpenseSearch({ ...expenseSearch, open: !expenseSearch.open })} className="bg-black text-white px-4 py-2 rounded-lg text-sm">🔍 Gider Ara</button></div>
+            <div className="flex gap-2 mt-4 justify-center"><button onClick={() => setSelectedDate(getTurkeyDate())} className="bg-black text-white px-4 py-2 rounded-lg text-sm">Bugün</button><button onClick={() => setExpenseSearch({ ...expenseSearch, open: !expenseSearch.open })} className="bg-black text-white px-4 py-2 rounded-lg text-sm">🔍 Gider Ara</button></div>
           </div>
 
           {expenseSearch.open && (() => {
@@ -1284,6 +1301,7 @@ export default function App() {
                           <div>
                             <span className="text-sm">{e.description}</span>
                             {e.employee_id && (<span className="ml-2 text-xs bg-black text-white px-1.5 py-0.5 rounded-full">👤 {getEmployeeName(e.employee_id)}</span>)}
+                            {e.is_external && (<span className="ml-2 text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded-full">💸 Dışarıdan</span>)}
                             <span className="text-xs text-gray-400 block">{formatDateTR(e.date)}</span>
                           </div>
                           <span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span>
@@ -1297,7 +1315,7 @@ export default function App() {
               </div>
             );
           })()}
-          {(isToday || user?.role === 'admin') && !currentReport && (<button onClick={() => { setReportForm({...reportForm, date: selectedDate}); setExpensesList([]); setShowAddReport(true); }} className="w-full bg-gradient-to-r from-red-500 to-red-600 text-white py-4 rounded-xl font-semibold mb-6">+ Rapor Ekle</button>)}
+          {(isToday || user?.role === 'admin') && !currentReport && (<button onClick={() => { setReportForm({...reportForm, date: selectedDate}); setExpensesList([]); setShowAddReport(true); }} className="w-full bg-black text-white py-4 rounded-xl font-semibold mb-6">+ Rapor Ekle</button>)}
           {currentReport ? (
             <div className="bg-white rounded-xl shadow p-6">
               <div className="flex justify-between items-start mb-4 flex-wrap gap-2">
@@ -1313,17 +1331,18 @@ export default function App() {
                 <div className="bg-red-50 p-3 rounded-lg border-2 border-red-200"><p className="text-red-600 font-semibold text-xs">🎫 Yemek Kartı</p><p className="text-lg font-bold">{formatMoney(currentReport.meal_cards)}</p></div>
                 <div className="bg-gray-50 p-3 rounded-lg border-2 border-gray-300"><p className="text-black font-semibold text-xs">💰 Eldeki Nakit</p><p className="text-lg font-bold">{formatMoney(currentReport.actual_cash)}</p></div>
               </div>
-              <div className="bg-red-50 p-4 rounded-lg border-2 border-red-200 mb-4"><div className="flex justify-between mb-2"><p className="text-red-600 font-semibold">📉 Giderler</p><p className="font-bold text-red-700">{formatMoney(getExpTotal(currentReport.expenses))}</p></div>{(currentReport.expenses || []).length > 0 ? (currentReport.expenses.map((e, i) => (<div key={i} className="flex justify-between text-sm bg-white p-2 rounded mb-1"><span>{e.description}{e.employee_id && (<span className="ml-2 text-xs bg-black text-white px-1.5 py-0.5 rounded-full">👤 {getEmployeeName(e.employee_id)}</span>)}</span><span className="text-red-600 font-semibold">{formatMoney(e.amount)}</span></div>))) : (<p className="text-sm text-gray-500 text-center py-2">Gider girilmedi</p>)}</div>
+              <div className="bg-red-50 p-4 rounded-lg border-2 border-red-200 mb-4"><div className="flex justify-between mb-2"><p className="text-red-600 font-semibold">📉 Giderler (Kasadan)</p><p className="font-bold text-red-700">{formatMoney(getExpTotal(currentReport.expenses))}</p></div>{(currentReport.expenses || []).filter(e => !e.is_external).length > 0 ? (currentReport.expenses.filter(e => !e.is_external).map((e, i) => (<div key={i} className="flex justify-between text-sm bg-white p-2 rounded mb-1"><span>{e.description}{e.employee_id && (<span className="ml-2 text-xs bg-black text-white px-1.5 py-0.5 rounded-full">👤 {getEmployeeName(e.employee_id)}</span>)}</span><span className="text-red-600 font-semibold">{formatMoney(e.amount)}</span></div>))) : (<p className="text-sm text-gray-500 text-center py-2">Gider girilmedi</p>)}</div>
+              {getExtTotal(currentReport.expenses) > 0 && (<div className="bg-blue-50 p-4 rounded-lg border-2 border-blue-200 mb-4"><div className="flex justify-between mb-2"><p className="text-blue-600 font-semibold">💸 Dışarıdan Gelen (Havale)</p><p className="font-bold text-blue-700">{formatMoney(getExtTotal(currentReport.expenses))}</p></div><p className="text-xs text-blue-500 mb-2">Bu tutarlar kasadan düşmez, dışarıdan gelen parayla ödenmiştir.</p>{currentReport.expenses.filter(e => e.is_external).map((e, i) => (<div key={i} className="flex justify-between text-sm bg-white p-2 rounded mb-1"><span>{e.description}{e.employee_id && (<span className="ml-2 text-xs bg-black text-white px-1.5 py-0.5 rounded-full">👤 {getEmployeeName(e.employee_id)}</span>)}</span><span className="text-blue-600 font-semibold">{formatMoney(e.amount)}</span></div>))}</div>)}
             </div>
           ) : (<div className="bg-white rounded-xl shadow p-12 text-center"><p className="text-5xl mb-4">📋</p><p className="text-xl text-gray-500">{formatDateTR(selectedDate)} - Kayıt yok</p></div>)}
           <div className="mt-6"><h3 className="text-lg font-bold mb-4">Son Raporlar</h3><div className="space-y-2">{getBusinessReports(selectedBusiness.id).slice(0, 5).map(r => (<button key={r.id} onClick={() => setSelectedDate(r.date)} className={`w-full text-left p-4 rounded-lg ${selectedDate === r.date ? 'bg-gray-100 border-2 border-black' : 'bg-white'}`}><div className="flex justify-between"><span className="font-semibold">{formatDateTR(r.date)}</span><span>{formatMoney(Number(r.credit_card) + Number(r.cash) + Number(r.meal_cards))}</span></div></button>))}</div></div>
         </main>
         
         {/* Add Report Modal */}
-        {showAddReport && (<div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-lg my-8 max-h-[90vh] overflow-y-auto"><h3 className="text-xl font-bold mb-4 text-red-600">📊 Gün Sonu - {selectedBusiness.name}</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tarih</label><div className="text-lg font-bold border-2 rounded-lg px-4 py-2 bg-gray-50">{formatDateTR(reportForm.date)}</div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">💳 Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div><div><label className="text-sm font-medium">💵 Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">🎫 Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div><div><label className="text-sm font-medium">💰 Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div></div><div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-3">📉 Giderler</label><div className="space-y-2 mb-3"><div className="flex gap-2"><input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} className="flex-1 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-red-500 text-white px-4 py-2 rounded-lg">+</button></div>{getActiveEmployees().length > 0 && (<select value={newExpense.employee_id} onChange={(e) => setNewExpense({...newExpense, employee_id: e.target.value})} className="w-full px-3 py-2 border-2 rounded-lg text-sm bg-white text-gray-700"><option value="">Normal gider (personel maaşı değil)</option>{getActiveEmployees().map(emp => (<option key={emp.id} value={emp.id}>👤 {emp.name} — maaşından düşülsün</option>))}</select>)}</div><div className="max-h-48 overflow-y-auto">{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}{e.employee_id && (<span className="ml-2 text-xs bg-black text-white px-1.5 py-0.5 rounded-full">👤 {getEmployeeName(e.employee_id)}</span>)}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => startEditExpense(e)} className="text-gray-400 hover:text-black" title="Düzenle">✏️</button><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400">✕</button></div></div>))}</div><div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Toplam:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div></div><div><label className="text-sm font-medium">📝 Notlar</label><textarea value={reportForm.notes} onChange={(e) => setReportForm({...reportForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowAddReport(false); setExpensesList([]); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={() => handleSaveReportClick('add')} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Kaydet</button></div></div></div>)}
+        {showAddReport && (<div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-lg my-8 max-h-[90vh] overflow-y-auto"><h3 className="text-xl font-bold mb-4 text-black">📊 Gün Sonu - {selectedBusiness.name}</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tarih</label><div className="text-lg font-bold border-2 rounded-lg px-4 py-2 bg-gray-50">{formatDateTR(reportForm.date)}</div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">💳 Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div><div><label className="text-sm font-medium">💵 Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">🎫 Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div><div><label className="text-sm font-medium">💰 Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div></div><div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-3">📉 Giderler</label><div className="space-y-2 mb-3"><div className="flex gap-2"><input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} className="flex-1 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-red-500 text-white px-4 py-2 rounded-lg">+</button></div>{getActiveEmployees().length > 0 && (<select value={newExpense.employee_id} onChange={(e) => setNewExpense({...newExpense, employee_id: e.target.value})} className="w-full px-3 py-2 border-2 rounded-lg text-sm bg-white text-gray-700"><option value="">Normal gider (personel maaşı değil)</option>{getActiveEmployees().map(emp => (<option key={emp.id} value={emp.id}>👤 {emp.name} — maaşından düşülsün</option>))}</select>)}<label className="flex items-center gap-2 bg-blue-50 border-2 border-blue-200 rounded-lg px-3 py-2 cursor-pointer"><input type="checkbox" checked={newExpense.is_external} onChange={(e) => setNewExpense({...newExpense, is_external: e.target.checked})} className="w-4 h-4 accent-blue-600" /><span className="text-sm text-blue-700 font-medium">💸 Dışarıdan gelen (havale) — kasadan düşme</span></label></div><div className="max-h-48 overflow-y-auto">{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}{e.employee_id && (<span className="ml-2 text-xs bg-black text-white px-1.5 py-0.5 rounded-full">👤 {getEmployeeName(e.employee_id)}</span>)}{e.is_external && (<span className="ml-2 text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded-full">💸 Dışarıdan</span>)}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => startEditExpense(e)} className="text-gray-400 hover:text-black" title="Düzenle">✏️</button><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400">✕</button></div></div>))}</div><div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Kasa Gideri:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div>{getTotalExternal() > 0 && (<div className="flex justify-between pt-1"><span className="font-semibold text-blue-700">💸 Dışarıdan Gelen:</span><span className="font-bold text-blue-700">{formatMoney(getTotalExternal())}</span></div>)}</div><div><label className="text-sm font-medium">📝 Notlar</label><textarea value={reportForm.notes} onChange={(e) => setReportForm({...reportForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowAddReport(false); setExpensesList([]); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={() => handleSaveReportClick('add')} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Kaydet</button></div></div></div>)}
         
         {/* Edit Report Modal */}
-        {showEditReport && (<div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-lg my-8 max-h-[90vh] overflow-y-auto"><h3 className="text-xl font-bold mb-4 text-black">✏️ Rapor Düzenle</h3><div className="space-y-4"><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">💳 Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">💵 Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">🎫 Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">💰 Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div></div><div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-3">📉 Giderler</label><div className="space-y-2 mb-3"><div className="flex gap-2"><input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} className="flex-1 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-red-500 text-white px-4 py-2 rounded-lg">+</button></div>{getActiveEmployees().length > 0 && (<select value={newExpense.employee_id} onChange={(e) => setNewExpense({...newExpense, employee_id: e.target.value})} className="w-full px-3 py-2 border-2 rounded-lg text-sm bg-white text-gray-700"><option value="">Normal gider (personel maaşı değil)</option>{getActiveEmployees().map(emp => (<option key={emp.id} value={emp.id}>👤 {emp.name} — maaşından düşülsün</option>))}</select>)}</div><div className="max-h-48 overflow-y-auto">{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}{e.employee_id && (<span className="ml-2 text-xs bg-black text-white px-1.5 py-0.5 rounded-full">👤 {getEmployeeName(e.employee_id)}</span>)}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => startEditExpense(e)} className="text-gray-400 hover:text-black" title="Düzenle">✏️</button><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400">✕</button></div></div>))}</div><div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Toplam:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowEditReport(false); setExpensesList([]); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={() => handleSaveReportClick('edit')} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
+        {showEditReport && (<div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-lg my-8 max-h-[90vh] overflow-y-auto"><h3 className="text-xl font-bold mb-4 text-black">✏️ Rapor Düzenle</h3><div className="space-y-4"><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">💳 Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">💵 Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">🎫 Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">💰 Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div></div><div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-3">📉 Giderler</label><div className="space-y-2 mb-3"><div className="flex gap-2"><input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} className="flex-1 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-red-500 text-white px-4 py-2 rounded-lg">+</button></div>{getActiveEmployees().length > 0 && (<select value={newExpense.employee_id} onChange={(e) => setNewExpense({...newExpense, employee_id: e.target.value})} className="w-full px-3 py-2 border-2 rounded-lg text-sm bg-white text-gray-700"><option value="">Normal gider (personel maaşı değil)</option>{getActiveEmployees().map(emp => (<option key={emp.id} value={emp.id}>👤 {emp.name} — maaşından düşülsün</option>))}</select>)}<label className="flex items-center gap-2 bg-blue-50 border-2 border-blue-200 rounded-lg px-3 py-2 cursor-pointer"><input type="checkbox" checked={newExpense.is_external} onChange={(e) => setNewExpense({...newExpense, is_external: e.target.checked})} className="w-4 h-4 accent-blue-600" /><span className="text-sm text-blue-700 font-medium">💸 Dışarıdan gelen (havale) — kasadan düşme</span></label></div><div className="max-h-48 overflow-y-auto">{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}{e.employee_id && (<span className="ml-2 text-xs bg-black text-white px-1.5 py-0.5 rounded-full">👤 {getEmployeeName(e.employee_id)}</span>)}{e.is_external && (<span className="ml-2 text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded-full">💸 Dışarıdan</span>)}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => startEditExpense(e)} className="text-gray-400 hover:text-black" title="Düzenle">✏️</button><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400">✕</button></div></div>))}</div><div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Kasa Gideri:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div>{getTotalExternal() > 0 && (<div className="flex justify-between pt-1"><span className="font-semibold text-blue-700">💸 Dışarıdan Gelen:</span><span className="font-bold text-blue-700">{formatMoney(getTotalExternal())}</span></div>)}</div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowEditReport(false); setExpensesList([]); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={() => handleSaveReportClick('edit')} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
         
         <DeleteConfirmModal />
       </div>
@@ -1337,8 +1356,8 @@ export default function App() {
       return (
         <div className="min-h-screen bg-gray-100">
           <LoadingOverlay />
-          <header className="bg-white shadow border-b-4 border-red-500"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">📦 Toptancı</h1></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
-          <main className="max-w-lg mx-auto px-4 py-8"><div className="space-y-4">{allowedBusinesses.map(b => (<button key={b.id} onClick={() => setSelectedBusiness(b)} className="w-full bg-white p-6 rounded-xl shadow text-left border-l-4 border-red-500"><p className="text-xl font-bold">{b.name}</p></button>))}</div></main>
+          <header className="bg-white shadow border-b border-gray-200"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">📦 Toptancı</h1></div><button onClick={handleLogout} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">Çıkış</button></div></header>
+          <main className="max-w-lg mx-auto px-4 py-8"><div className="space-y-4">{allowedBusinesses.map(b => (<button key={b.id} onClick={() => setSelectedBusiness(b)} className="w-full bg-white p-6 rounded-xl shadow text-left border-l-4 border-black"><p className="text-xl font-bold">{b.name}</p></button>))}</div></main>
         </div>
       );
     }
@@ -1347,12 +1366,12 @@ export default function App() {
       <div className="min-h-screen bg-gray-100">
         <LoadingOverlay />
         <InvoiceModal />
-        <header className="bg-white shadow border-b-4 border-red-500"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => { setSelectedBusiness(null); setSelectedSupplier(null); setSearchQuery(''); }} className="text-2xl text-black">←</button><div><h1 className="text-xl font-bold">{selectedBusiness.name}</h1><p className="text-sm text-gray-500">{user?.full_name} {user?.role === 'admin' && <span className="bg-red-100 text-red-700 px-2 rounded text-xs ml-1">Admin</span>}</p></div></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
+        <header className="bg-white shadow border-b border-gray-200"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => { setSelectedBusiness(null); setSelectedSupplier(null); setSearchQuery(''); }} className="text-2xl text-black">←</button><div><h1 className="text-xl font-bold">{selectedBusiness.name}</h1><p className="text-sm text-gray-500">{user?.full_name} {user?.role === 'admin' && <span className="bg-black text-white px-2 rounded text-xs ml-1">Admin</span>}</p></div></div><button onClick={handleLogout} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">Çıkış</button></div></header>
         <main className="max-w-7xl mx-auto px-4 py-6">
-          <div className={`rounded-2xl p-6 text-white mb-6 ${totalDebt > 0 ? 'bg-gradient-to-r from-red-500 to-red-700' : 'bg-gradient-to-r from-black to-red-700'}`}><p className="text-white/80 text-sm">Toplam {totalDebt > 0 ? 'Borç' : 'Durum'}</p><p className="text-4xl font-bold">{formatMoney(Math.abs(totalDebt))}</p><p className="text-white/80 text-sm mt-2">{getBusinessSuppliers().length} toptancı</p></div>
+          <div className={`rounded-2xl p-6 text-white mb-6 ${totalDebt > 0 ? 'bg-gradient-to-r from-red-500 to-red-700' : 'bg-black'}`}><p className="text-white/80 text-sm">Toplam {totalDebt > 0 ? 'Borç' : 'Durum'}</p><p className="text-4xl font-bold">{formatMoney(Math.abs(totalDebt))}</p><p className="text-white/80 text-sm mt-2">{getBusinessSuppliers().length} toptancı</p></div>
           <div className="grid md:grid-cols-2 gap-6">
             <div className="bg-white rounded-xl shadow p-6">
-              <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">Toptancılar</h2><button onClick={() => setShowAddSupplier(true)} className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm">+ Ekle</button></div>
+              <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">Toptancılar</h2><button onClick={() => setShowAddSupplier(true)} className="bg-black text-white px-4 py-2 rounded-lg text-sm">+ Ekle</button></div>
               <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="🔍 Ara..." className="w-full px-4 py-2 border-2 rounded-lg mb-4" />
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {getFilteredSuppliers().map(s => { const bal = getSupplierBalance(s.id); return (<div key={s.id} onClick={() => setSelectedSupplier(s)} className={`p-4 rounded-lg cursor-pointer ${selectedSupplier?.id === s.id ? 'bg-gray-100 border-2 border-black' : 'bg-gray-50'}`}><div className="flex justify-between"><div><p className="font-semibold">{s.name}</p>{s.phone && <p className="text-sm text-gray-500">{s.phone}</p>}</div><div className="text-right"><p className={`font-bold ${bal > 0 ? 'text-red-600' : bal < 0 ? 'text-gray-900' : 'text-gray-600'}`}>{formatMoney(Math.abs(bal))}</p><p className={`text-xs ${bal > 0 ? 'text-red-500' : bal < 0 ? 'text-gray-900' : 'text-gray-400'}`}>{bal > 0 ? 'Borç' : bal < 0 ? 'Alacak' : 'Eşit'}</p></div></div></div>); })}
@@ -1397,13 +1416,13 @@ export default function App() {
           </div>
         </main>
         
-        {showAddSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-black">Yeni Toptancı</h3><div className="space-y-4"><div><label className="text-sm font-medium">Ad *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Telefon</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Not</label><textarea value={supplierForm.notes} onChange={(e) => setSupplierForm({...supplierForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowAddSupplier(false)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddSupplier} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Ekle</button></div></div></div>)}
+        {showAddSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-black">Yeni Toptancı</h3><div className="space-y-4"><div><label className="text-sm font-medium">Ad *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Telefon</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Not</label><textarea value={supplierForm.notes} onChange={(e) => setSupplierForm({...supplierForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowAddSupplier(false)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddSupplier} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Ekle</button></div></div></div>)}
         
-        {showEditSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-black">✏️ Toptancı Düzenle</h3><div className="space-y-4"><div><label className="text-sm font-medium">Ad *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Telefon</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Not</label><textarea value={supplierForm.notes} onChange={(e) => setSupplierForm({...supplierForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowEditSupplier(null); setSupplierForm({ name: '', phone: '', notes: '' }); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleEditSupplier} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
+        {showEditSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-black">✏️ Toptancı Düzenle</h3><div className="space-y-4"><div><label className="text-sm font-medium">Ad *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Telefon</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Not</label><textarea value={supplierForm.notes} onChange={(e) => setSupplierForm({...supplierForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowEditSupplier(null); setSupplierForm({ name: '', phone: '', notes: '' }); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleEditSupplier} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
         
         {showAddTransaction && selectedSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-md my-8"><h3 className={`text-xl font-bold mb-4 ${showAddTransaction === 'ALIM' ? 'text-red-600' : 'text-gray-900'}`}>{showAddTransaction === 'ALIM' ? '📦 Mal Alımı' : '💰 Ödeme'}</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tutar *</label><input type="number" value={transactionForm.amount} onChange={(e) => setTransactionForm({...transactionForm, amount: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div><div><label className="text-sm font-medium">Tarih *</label><input type="date" value={transactionForm.date} onChange={(e) => setTransactionForm({...transactionForm, date: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /><p className="text-sm text-gray-600 mt-1">{formatDateTR(transactionForm.date)}</p></div><div><label className="text-sm font-medium">Ödeme Biçimi</label><select value={transactionForm.payment_method} onChange={(e) => setTransactionForm({...transactionForm, payment_method: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg"><option value="nakit">💵 Nakit</option><option value="kredi_karti">💳 Kredi Kartı</option><option value="cek">📄 Çek</option><option value="senet">📃 Senet</option></select></div><div><label className="text-sm font-medium">Açıklama</label><input type="text" value={transactionForm.description} onChange={(e) => setTransactionForm({...transactionForm, description: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">📄 Fatura Ekle</label><input type="file" accept="image/*,.pdf" onChange={(e) => setTransactionForm({...transactionForm, invoice: e.target.files[0]})} className="w-full px-4 py-2 border-2 rounded-lg text-sm" />{transactionForm.invoice && <p className="text-xs text-gray-900 mt-1">✅ {transactionForm.invoice.name}</p>}{uploadingInvoice && <p className="text-xs text-black mt-1">⏳ Yükleniyor...</p>}</div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowAddTransaction(null)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddTransaction} disabled={loading || uploadingInvoice} className={`flex-1 text-white py-3 rounded-lg font-semibold ${showAddTransaction === 'ALIM' ? 'bg-red-500' : 'bg-black'}`}>Kaydet</button></div></div></div>)}
         
-        {showEditTransaction && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-black">✏️ İşlem Düzenle</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tutar</label><input type="number" value={transactionForm.amount} onChange={(e) => setTransactionForm({...transactionForm, amount: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Ödeme Biçimi</label><select value={transactionForm.payment_method} onChange={(e) => setTransactionForm({...transactionForm, payment_method: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg"><option value="nakit">💵 Nakit</option><option value="kredi_karti">💳 Kredi Kartı</option><option value="cek">📄 Çek</option><option value="senet">📃 Senet</option></select></div><div><label className="text-sm font-medium">Açıklama</label><input type="text" value={transactionForm.description} onChange={(e) => setTransactionForm({...transactionForm, description: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">📄 Yeni Fatura</label><input type="file" accept="image/*,.pdf" onChange={(e) => setTransactionForm({...transactionForm, invoice: e.target.files[0]})} className="w-full px-4 py-2 border-2 rounded-lg text-sm" />{showEditTransaction.invoice_url && !transactionForm.invoice && <p className="text-xs text-black mt-1">📄 Mevcut fatura var</p>}{transactionForm.invoice && <p className="text-xs text-gray-900 mt-1">✅ {transactionForm.invoice.name}</p>}</div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowEditTransaction(null)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleEditTransaction} disabled={loading || uploadingInvoice} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
+        {showEditTransaction && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-black">✏️ İşlem Düzenle</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tutar</label><input type="number" value={transactionForm.amount} onChange={(e) => setTransactionForm({...transactionForm, amount: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Ödeme Biçimi</label><select value={transactionForm.payment_method} onChange={(e) => setTransactionForm({...transactionForm, payment_method: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg"><option value="nakit">💵 Nakit</option><option value="kredi_karti">💳 Kredi Kartı</option><option value="cek">📄 Çek</option><option value="senet">📃 Senet</option></select></div><div><label className="text-sm font-medium">Açıklama</label><input type="text" value={transactionForm.description} onChange={(e) => setTransactionForm({...transactionForm, description: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">📄 Yeni Fatura</label><input type="file" accept="image/*,.pdf" onChange={(e) => setTransactionForm({...transactionForm, invoice: e.target.files[0]})} className="w-full px-4 py-2 border-2 rounded-lg text-sm" />{showEditTransaction.invoice_url && !transactionForm.invoice && <p className="text-xs text-black mt-1">📄 Mevcut fatura var</p>}{transactionForm.invoice && <p className="text-xs text-gray-900 mt-1">✅ {transactionForm.invoice.name}</p>}</div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowEditTransaction(null)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleEditTransaction} disabled={loading || uploadingInvoice} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
         
         <DeleteConfirmModal />
       </div>
@@ -1424,7 +1443,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gray-50">
         <LoadingOverlay />
-        <header className="bg-white shadow border-b-4 border-red-600"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => { setScreen('menu'); setSelectedEmployee(null); }} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">🧾 Maaş Takibi</h1><span className="bg-black text-white text-xs px-2 py-1 rounded-full">Sadece Admin</span></div><button onClick={handleLogout} className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm">Çıkış</button></div></header>
+        <header className="bg-white shadow border-b border-gray-200"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => { setScreen('menu'); setSelectedEmployee(null); }} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">🧾 Maaş Takibi</h1><span className="bg-black text-white text-xs px-2 py-1 rounded-full">Sadece Admin</span></div><button onClick={handleLogout} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">Çıkış</button></div></header>
 
         <main className="max-w-7xl mx-auto px-4 py-6">
           <div className="mb-2 text-sm text-gray-500">{SALARY_PERIOD[0].label} – {SALARY_PERIOD[11].label} (12 ay)</div>
@@ -1451,14 +1470,14 @@ export default function App() {
             <select value={salarySortKey} onChange={(e) => setSalarySortKey(e.target.value)} className="px-3 py-2 border-2 rounded-lg text-sm">
               {SALARY_PERIOD.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
             </select>
-            <button onClick={() => { setShowAddEmployee(true); setError(''); }} className="ml-auto bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-700">+ Personel Ekle</button>
+            <button onClick={() => { setShowAddEmployee(true); setError(''); }} className="ml-auto bg-black text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-800">+ Personel Ekle</button>
           </div>
 
           {/* Maaş tablosu — 12 ay, yatay kaydırılır */}
           <div className="bg-white rounded-xl shadow overflow-x-auto">
             <table className="text-sm" style={{ minWidth: '900px' }}>
               <thead>
-                <tr className="border-b-2 border-red-600 text-gray-600">
+                <tr className="border-b-2 border-black text-gray-900">
                   <th className="text-left p-3 font-semibold sticky left-0 bg-white z-10" style={{ minWidth: '150px' }}>Personel</th>
                   {SALARY_PERIOD.map(p => <th key={p.key} className="text-right p-3 font-semibold whitespace-nowrap">{p.label}</th>)}
                 </tr>
@@ -1468,7 +1487,7 @@ export default function App() {
                   <tr key={e.id} onClick={() => { setSelectedEmployee(e); }} className={`border-b cursor-pointer hover:bg-gray-50 ${emp && emp.id === e.id ? 'bg-gray-100' : ''}`}>
                     <td className="p-3 sticky left-0 bg-white z-10">
                       <div className="flex items-center gap-2">
-                        <span className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xs font-semibold flex-shrink-0">{getEmpInitials(e.name)}</span>
+                        <span className="w-8 h-8 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-xs font-semibold flex-shrink-0">{getEmpInitials(e.name)}</span>
                         <span className="font-medium text-gray-800 whitespace-nowrap">{e.name}{e.end_key ? <span className="text-xs text-gray-400"> (çıkış)</span> : ''}</span>
                       </div>
                     </td>
@@ -1505,10 +1524,10 @@ export default function App() {
             const pct = due > 0 ? Math.min(100, Math.round((pd / due) * 100)) : 0;
             const empPayments = salaryPayments.filter(p => p.employee_id === emp.id && p.year === detailPeriod.year && p.month === detailPeriod.month);
             return (
-              <div className="bg-white rounded-xl shadow border-t-4 border-red-600 p-5 mt-6">
+              <div className="bg-white rounded-xl shadow border-t-4 border-gray-300 p-5 mt-6">
                 <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
                   <div className="flex items-center gap-3">
-                    <span className="w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-sm font-semibold">{getEmpInitials(emp.name)}</span>
+                    <span className="w-10 h-10 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-sm font-semibold">{getEmpInitials(emp.name)}</span>
                     <div>
                       <p className="font-bold text-gray-800">{emp.name}</p>
                       <p className="text-xs text-gray-500">Aylık baz maaş: {formatMoney(emp.base_salary)}</p>
@@ -1519,7 +1538,7 @@ export default function App() {
 
                 <div className="flex gap-2 flex-wrap mb-4">
                   {SALARY_PERIOD.map(p => (
-                    <button key={p.key} onClick={() => setSalaryDetailKey(p.key)} className={`px-3 py-1 rounded-lg text-xs border-2 whitespace-nowrap ${p.key === salaryDetailKey ? 'border-red-600 text-red-600 bg-red-50' : 'border-gray-200 text-gray-500'}`}>{p.label}</button>
+                    <button key={p.key} onClick={() => setSalaryDetailKey(p.key)} className={`px-3 py-1 rounded-lg text-xs border-2 whitespace-nowrap ${p.key === salaryDetailKey ? 'border-black text-black bg-gray-100' : 'border-gray-200 text-gray-500'}`}>{p.label}</button>
                   ))}
                 </div>
 
@@ -1561,14 +1580,14 @@ export default function App() {
         {showAddEmployee && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-xl p-6 w-full max-w-md">
-              <h3 className="text-xl font-bold mb-4 text-red-600">🧾 Yeni Personel</h3>
+              <h3 className="text-xl font-bold mb-4 text-black">🧾 Yeni Personel</h3>
               <div className="space-y-4">
                 <div><label className="text-sm font-medium">Ad Soyad *</label><input type="text" value={employeeForm.name} onChange={(e) => setEmployeeForm({ ...employeeForm, name: e.target.value })} className="w-full px-4 py-2 border-2 rounded-lg" /></div>
                 <div><label className="text-sm font-medium">Aylık Maaş (₺) *</label><input type="number" value={employeeForm.salary} onChange={(e) => setEmployeeForm({ ...employeeForm, salary: e.target.value })} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div>
                 <div><label className="text-sm font-medium">Başlangıç ayı</label><select value={employeeForm.startKey} onChange={(e) => setEmployeeForm({ ...employeeForm, startKey: e.target.value })} className="w-full px-4 py-2 border-2 rounded-lg">{SALARY_PERIOD.map(p => <option key={p.key} value={p.key}>{p.label}'den itibaren</option>)}</select></div>
               </div>
               {error && <div className="bg-red-100 text-red-700 px-3 py-2 rounded-lg text-sm mt-3">{error}</div>}
-              <div className="flex gap-2 mt-6"><button onClick={() => { setShowAddEmployee(false); setError(''); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddEmployee} disabled={loading} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Ekle</button></div>
+              <div className="flex gap-2 mt-6"><button onClick={() => { setShowAddEmployee(false); setError(''); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddEmployee} disabled={loading} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Ekle</button></div>
             </div>
           </div>
         )}
@@ -1606,7 +1625,7 @@ export default function App() {
         {terminateModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[80vh] overflow-y-auto">
-              <h3 className="text-xl font-bold mb-1 text-red-600">İşten Çıkar / Sil</h3>
+              <h3 className="text-xl font-bold mb-1 text-black">İşten Çıkar / Sil</h3>
               <p className="text-sm text-gray-500 mb-4">{terminateModal.name}</p>
               <p className="text-sm text-gray-700 mb-2">Çıkış ayını seç (o aydan sonrası maaş tahakkuku durur):</p>
               <div className="flex gap-2 flex-wrap mb-4">
