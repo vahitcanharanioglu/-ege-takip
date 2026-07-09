@@ -3,6 +3,44 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
+// ---- MİNİMAL TEK RENK İKON SETİ (stroke-based, currentColor) ----
+const Icon = ({ path, size = 20, className = '', strokeWidth = 1.6, fill = false }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
+    fill={fill ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={strokeWidth}
+    strokeLinecap="round" strokeLinejoin="round" className={className} style={{ flexShrink: 0 }}>
+    {path}
+  </svg>
+);
+const IconPaths = {
+  box: <><path d="M21 8V21H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></>,
+  chart: <><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></>,
+  wallet: <><path d="M20 12V8H4a2 2 0 010-4h14v4"/><path d="M4 8v10a2 2 0 002 2h14v-8H6a2 2 0 01-2-2z"/><circle cx="17" cy="14" r="1"/></>,
+  trending: <><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></>,
+  receipt: <><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1V2l-2 1-2-1-2 1-2-1-2 1-2-1z"/><path d="M8 7h8M8 11h8M8 15h5"/></>,
+  card: <><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></>,
+  cash: <><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></>,
+  meal: <><path d="M4 3v7a2 2 0 002 2v9M6 3v6M8 3v6M8 3v6"/><path d="M18 3c-1.5 0-3 2-3 5s1.5 4 3 4v9"/></>,
+  arrowDown: <><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></>,
+  arrowUp: <><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></>,
+  user: <><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 016-6h4a6 6 0 016 6v1"/></>,
+  edit: <><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></>,
+  trash: <><path d="M3 6h18"/><path d="M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></>,
+  search: <><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></>,
+  file: <><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></>,
+  crown: <><path d="M2 18h20M3 8l4 4 5-7 5 7 4-4-2 10H5z"/></>,
+  alert: <><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L14.7 3.9a2 2 0 00-3.4 0z"/></>,
+  note: <><path d="M4 4h16v12l-4 4H4z"/><path d="M16 20v-4h4"/><path d="M8 9h8M8 13h5"/></>,
+  send: <><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></>,
+  back: <><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></>,
+  logout: <><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></>,
+  plus: <><path d="M12 5v14M5 12h14"/></>,
+  check: <><path d="M20 6L9 17l-5-5"/></>,
+  close: <><path d="M18 6L6 18M6 6l12 12"/></>,
+  calendar: <><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></>,
+  leaf: <><path d="M11 20A7 7 0 019.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></>,
+};
+
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [screen, setScreen] = useState('login');
@@ -508,7 +546,7 @@ export default function App() {
           year: part.year,
           month: part.month,
           amount: part.amount,
-          note: `${exp.is_external ? '💸 Dışarıdan (havale)' : '🍽️ Gün sonu gideri'}${exp.description ? ' - ' + exp.description : ''}`,
+          note: `${exp.is_external ? 'Dışarıdan (havale)' : 'Gün sonu gideri'}${exp.description ? ' - ' + exp.description : ''}`,
           created_by: user.id,
           expense_id: exp.id,
         });
@@ -934,7 +972,7 @@ export default function App() {
   
   const cancelDelete = () => setDeleteConfirm({ show: false, step: 1, type: null, id: null, name: '' });
 
-  const getPaymentLabel = (m) => ({ nakit: '💵 Nakit', kredi_karti: '💳 Kredi Kartı', cek: '📄 Çek', senet: '📃 Senet' }[m] || m);
+  const getPaymentLabel = (m) => ({ nakit: 'Nakit', kredi_karti: 'Kredi Kartı', cek: 'Çek', senet: 'Senet' }[m] || m);
   const getBusinessReports = (bid) => dailyReports.filter(r => r.business_id === bid);
   const getReportByDate = (bid, date) => dailyReports.find(r => r.business_id === bid && r.date === date);
   const changeDate = (days) => { const d = new Date(selectedDate); d.setDate(d.getDate() + days); setSelectedDate(d.toISOString().split('T')[0]); };
@@ -994,11 +1032,11 @@ export default function App() {
     if (!deleteConfirm.show) return null;
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[100]">
-        <div className="bg-white rounded-xl p-6 w-full max-w-md">
+        <div className="rounded-2xl p-6 w-full max-w-md border border-white/60" style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
           {deleteConfirm.step === 1 ? (
-            <><div className="text-center mb-6"><p className="text-5xl mb-4">⚠️</p><h3 className="text-xl font-bold text-black mb-2">Silme Onayı (1/2)</h3><p className="text-gray-600">"{deleteConfirm.name}" silinecek.</p></div><div className="flex gap-2"><button onClick={cancelDelete} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={confirmDeleteStep1} className="flex-1 bg-red-500 text-white py-3 rounded-lg font-semibold">Devam</button></div></>
+            <><div className="text-center mb-6"><div className="w-14 h-14 mx-auto mb-4 rounded-full bg-red-50 text-red-500 flex items-center justify-center"><Icon path={IconPaths.alert} size={28}/></div><h3 className="text-xl font-bold text-black mb-2">Silme Onayı (1/2)</h3><p className="text-gray-600">"{deleteConfirm.name}" silinecek.</p></div><div className="flex gap-2"><button onClick={cancelDelete} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">İptal</button><button onClick={confirmDeleteStep1} className="flex-1 bg-red-500 text-white py-3 rounded-lg font-semibold">Devam</button></div></>
           ) : (
-            <><div className="text-center mb-6"><p className="text-5xl mb-4">🚨</p><h3 className="text-xl font-bold text-black mb-2">Son Onay (2/2)</h3><p className="text-gray-600">"{deleteConfirm.name}" kalıcı silinecek!</p></div><div className="flex gap-2"><button onClick={cancelDelete} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">Vazgeç</button><button onClick={confirmDeleteStep2} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Evet, Sil</button></div></>
+            <><div className="text-center mb-6"><div className="w-14 h-14 mx-auto mb-4 rounded-full bg-red-100 text-red-600 flex items-center justify-center"><Icon path={IconPaths.trash} size={26}/></div><h3 className="text-xl font-bold text-black mb-2">Son Onay (2/2)</h3><p className="text-gray-600">"{deleteConfirm.name}" kalıcı silinecek!</p></div><div className="flex gap-2"><button onClick={cancelDelete} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">Vazgeç</button><button onClick={confirmDeleteStep2} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Evet, Sil</button></div></>
           )}
         </div>
       </div>
@@ -1010,20 +1048,20 @@ export default function App() {
     if (!showExpenseConfirm) return null;
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[100]">
-        <div className="bg-white rounded-xl p-6 w-full max-w-md">
+        <div className="rounded-2xl p-6 w-full max-w-md border border-white/60" style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
           <div className="text-center mb-6">
-            <p className="text-5xl mb-4">📝</p>
+            <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center"><Icon path={IconPaths.note} size={26}/></div>
             <h3 className="text-xl font-bold text-black mb-2">Gider Onayı</h3>
             <p className="text-gray-600">Gider girdiğinize emin misiniz?</p>
             {expensesList.length === 0 ? (
-              <p className="text-red-500 mt-2 font-semibold">⚠️ Hiç gider girilmedi!</p>
+              <p className="text-red-500 mt-2 font-semibold">Hiç gider girilmedi!</p>
             ) : (
-              <p className="text-gray-900 mt-2 font-semibold">✅ {expensesList.length} gider girildi - Toplam: {formatMoney(getTotalExpenses())}</p>
+              <p className="text-gray-900 mt-2 font-semibold">{expensesList.length} gider girildi - Toplam: {formatMoney(getTotalExpenses())}</p>
             )}
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setShowExpenseConfirm(null)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">Geri Dön</button>
-            <button onClick={() => showExpenseConfirm === 'add' ? handleAddReport() : handleEditReport()} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Evet, Kaydet</button>
+            <button onClick={() => setShowExpenseConfirm(null)} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">Geri Dön</button>
+            <button onClick={() => showExpenseConfirm === 'add' ? handleAddReport() : handleEditReport()} className="flex-1 bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition">Evet, Kaydet</button>
           </div>
         </div>
       </div>
@@ -1036,7 +1074,7 @@ export default function App() {
       <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[100]" onClick={() => setViewInvoice(null)}>
         <div className="bg-white rounded-xl p-4 max-w-4xl max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-bold">📄 Fatura</h3>
+            <h3 className="text-lg font-bold">Fatura</h3>
             <button onClick={() => setViewInvoice(null)} className="text-gray-500 text-2xl">×</button>
           </div>
           <img src={viewInvoice} alt="Fatura" className="max-w-full rounded-lg" />
@@ -1088,25 +1126,35 @@ export default function App() {
 
   // MENU
   if (screen === 'menu') {
+    const menuItems = [
+      { key: 'toptanci', icon: IconPaths.box, title: 'Toptancı Ödemeleri', desc: 'Mal alımı ve ödeme takibi', show: true },
+      { key: 'gunsonu', icon: IconPaths.chart, title: 'Gün Sonu', desc: 'Günlük ciro ve kasa raporu', show: true },
+      { key: 'kasa', icon: IconPaths.wallet, title: 'Kasa Hareketleri', desc: 'Ödeme ve gelen para takibi', show: user?.role === 'admin' },
+      { key: 'ozet', icon: IconPaths.trending, title: 'Günlük Özet', desc: 'Tüm işletmelerin toplamı', show: user?.role === 'admin' },
+      { key: 'maas', icon: IconPaths.receipt, title: 'Maaş Takibi', desc: 'Personel maaşları ve ödemeler', show: user?.role === 'admin' },
+    ];
     return (
-      <div className="min-h-screen bg-black p-4">
+      <div className="min-h-screen p-4 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #f5f5f7 0%, #e8e8ec 50%, #dddde3 100%)' }}>
         <LoadingOverlay />
-        <div className="max-w-lg mx-auto pt-12">
-          <div className="text-center text-white mb-8">
-            <img src="/ege-logo-white.png" alt="Ege" className="w-36 h-auto mx-auto mb-3 select-none" draggable="false" />
-            <p className="text-lg text-white/80">Hoş geldin, {user?.full_name}</p>
-            {user?.role === 'admin' && <span className="inline-block mt-2 bg-white/15 px-3 py-1 rounded-full text-sm">👑 Admin</span>}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-24 -left-24 w-96 h-96 rounded-full opacity-40" style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.9) 0%, transparent 70%)' }} />
+          <div className="absolute -bottom-32 -right-16 w-[28rem] h-[28rem] rounded-full opacity-30" style={{ background: 'radial-gradient(circle, rgba(180,180,190,0.6) 0%, transparent 70%)' }} />
+        </div>
+        <div className="max-w-lg mx-auto pt-10 relative">
+          <div className="text-center mb-8">
+            <img src="/ege-logo.png" alt="Ege" className="w-32 h-auto mx-auto mb-2 select-none" draggable="false" />
+            <p className="text-gray-600">Hoş geldin, {user?.full_name}</p>
+            {user?.role === 'admin' && <span className="inline-flex items-center gap-1 mt-2 bg-black text-white px-3 py-1 rounded-full text-xs"><Icon path={IconPaths.crown} size={13} /> Admin</span>}
           </div>
-          <div className="space-y-4">
-            <button onClick={() => setScreen('toptanci')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-black"><span className="text-4xl">📦</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Toptancı Ödemeleri</p><p className="text-gray-500">Mal alımı ve ödeme takibi</p></div></button>
-            <button onClick={() => setScreen('gunsonu')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-black"><span className="text-4xl">📊</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Gün Sonu</p><p className="text-gray-500">Günlük ciro ve kasa raporu</p></div></button>
-            {user?.role === 'admin' && (<>
-              <button onClick={() => setScreen('kasa')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-black"><span className="text-4xl">💰</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Kasa Hareketleri</p><p className="text-gray-500">Ödeme ve gelen para takibi</p></div></button>
-              <button onClick={() => setScreen('ozet')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-black"><span className="text-4xl">📈</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Günlük Özet</p><p className="text-gray-500">Tüm işletmelerin toplamı</p></div></button>
-              <button onClick={() => setScreen('maas')} className="w-full bg-white p-6 rounded-2xl shadow-xl flex items-center gap-4 border-l-4 border-black"><span className="text-4xl">🧾</span><div className="text-left"><p className="text-xl font-bold text-gray-800">Maaş Takibi</p><p className="text-gray-500">Personel maaşları ve ödemeler</p></div></button>
-            </>)}
+          <div className="space-y-3">
+            {menuItems.filter(m => m.show).map(m => (
+              <button key={m.key} onClick={() => setScreen(m.key)} className="w-full p-5 rounded-2xl flex items-center gap-4 border border-white/60 transition hover:scale-[1.01] active:scale-[0.99]" style={{ background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)', boxShadow: '0 4px 20px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.7)' }}>
+                <span className="w-12 h-12 rounded-xl bg-black text-white flex items-center justify-center"><Icon path={m.icon} size={22} /></span>
+                <div className="text-left"><p className="text-lg font-semibold text-gray-900">{m.title}</p><p className="text-sm text-gray-500">{m.desc}</p></div>
+              </button>
+            ))}
           </div>
-          <button onClick={handleLogout} className="w-full mt-8 text-white/80 hover:text-white py-2 transition">Çıkış Yap</button>
+          <button onClick={handleLogout} className="w-full mt-8 text-gray-500 hover:text-gray-900 py-2 transition flex items-center justify-center gap-2"><Icon path={IconPaths.logout} size={16} /> Çıkış Yap</button>
         </div>
       </div>
     );
@@ -1116,9 +1164,9 @@ export default function App() {
   if (screen === 'ozet' && user?.role === 'admin') {
     const summary = getDailySummary(selectedDate);
     return (
-      <div className="min-h-screen bg-gray-100">
+      <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #f5f5f7 0%, #e8e8ec 50%, #dddde3 100%)' }}>
         <LoadingOverlay />
-        <header className="bg-white shadow border-b-4 border-black"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">📈 Günlük Özet</h1></div><button onClick={handleLogout} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">Çıkış</button></div></header>
+        <header className="sticky top-0 z-30 border-b border-white/50" style={{ background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)' }}><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-black p-1 -ml-1 rounded-lg hover:bg-black/5"><Icon path={IconPaths.back} size={22} /></button><h1 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Icon path={IconPaths.trending} size={20} /> Günlük Özet</h1></div><button onClick={handleLogout} className="inline-flex items-center gap-1.5 bg-black/5 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-black/10"><Icon path={IconPaths.logout} size={15} /> Çıkış</button></div></header>
         <main className="max-w-4xl mx-auto px-4 py-6">
           <div className="bg-white rounded-xl shadow p-4 mb-6">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1145,24 +1193,24 @@ export default function App() {
           
           <div className="grid grid-cols-4 gap-3 mb-6">
             <div className="bg-gray-50 p-4 rounded-xl border-2 border-gray-300 text-center">
-              <p className="text-black font-semibold text-xs">💳 Kredi Kartı</p>
+              <p className="text-emerald-600 font-semibold text-xs flex items-center gap-1"><Icon path={IconPaths.card} size={13}/> Kredi Kartı</p>
               <p className="text-lg font-bold">{formatMoney(summary.totalCreditCard)}</p>
             </div>
             <div className="bg-gray-50 p-4 rounded-xl border-2 border-gray-300 text-center">
-              <p className="text-gray-900 font-semibold text-xs">💵 Nakit</p>
+              <p className="text-emerald-600 font-semibold text-xs flex items-center gap-1"><Icon path={IconPaths.cash} size={13}/> Nakit</p>
               <p className="text-lg font-bold">{formatMoney(summary.totalCash)}</p>
             </div>
             <div className="bg-red-50 p-4 rounded-xl border-2 border-red-200 text-center">
-              <p className="text-red-600 font-semibold text-xs">🎫 Yemek Kartı</p>
+              <p className="text-emerald-600 font-semibold text-xs flex items-center gap-1"><Icon path={IconPaths.meal} size={13}/> Yemek Kartı</p>
               <p className="text-lg font-bold">{formatMoney(summary.totalMealCards)}</p>
             </div>
             <div className="bg-red-50 p-4 rounded-xl border-2 border-red-200 text-center">
-              <p className="text-red-600 font-semibold text-xs">📉 Toplam Gider</p>
+              <p className="text-red-600 font-semibold text-xs flex items-center gap-1"><Icon path={IconPaths.arrowDown} size={13}/> Toplam Gider</p>
               <p className="text-lg font-bold">{formatMoney(summary.totalExpenses)}</p>
             </div>
           </div>
           
-          <div className="bg-white rounded-xl shadow p-6">
+          <div className="rounded-2xl p-6 border border-white/50" style={{ background: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)', boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
             <h3 className="text-lg font-bold text-gray-800 mb-4">İşletme Detayları</h3>
             {summary.businessSummary.length > 0 ? (<div className="space-y-3">{summary.businessSummary.map((b, i) => (<div key={i} className="p-4 bg-gray-50 rounded-lg">
               <div className="flex justify-between items-center mb-2">
@@ -1173,10 +1221,10 @@ export default function App() {
                 </div>
               </div>
               <div className="grid grid-cols-4 gap-2 text-sm">
-                <div>💳 {formatMoney(b.credit_card)}</div>
-                <div>💵 {formatMoney(b.cash)}</div>
-                <div>🎫 {formatMoney(b.meal_cards)}</div>
-                <div className="text-red-600">📉 {formatMoney(b.expenses)}</div>
+                <div>{formatMoney(b.credit_card)}</div>
+                <div>{formatMoney(b.cash)}</div>
+                <div>{formatMoney(b.meal_cards)}</div>
+                <div className="text-red-600">{formatMoney(b.expenses)}</div>
               </div>
             </div>))}</div>) : (<p className="text-center text-gray-500 py-8">Rapor yok</p>)}
           </div>
@@ -1191,9 +1239,9 @@ export default function App() {
     const totalIn = todayMovements.filter(c => c.type === 'IN').reduce((s, c) => s + Number(c.amount), 0);
     const totalOut = todayMovements.filter(c => c.type === 'OUT').reduce((s, c) => s + Number(c.amount), 0);
     return (
-      <div className="min-h-screen bg-gray-100">
+      <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #f5f5f7 0%, #e8e8ec 50%, #dddde3 100%)' }}>
         <LoadingOverlay />
-        <header className="bg-white shadow border-b-4 border-black"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">💰 Kasa Hareketleri</h1></div><button onClick={handleLogout} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">Çıkış</button></div></header>
+        <header className="sticky top-0 z-30 border-b border-white/50" style={{ background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)' }}><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-black p-1 -ml-1 rounded-lg hover:bg-black/5"><Icon path={IconPaths.back} size={22} /></button><h1 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Icon path={IconPaths.wallet} size={20} /> Kasa Hareketleri</h1></div><button onClick={handleLogout} className="inline-flex items-center gap-1.5 bg-black/5 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-black/10"><Icon path={IconPaths.logout} size={15} /> Çıkış</button></div></header>
         <main className="max-w-4xl mx-auto px-4 py-6">
           <div className="bg-white rounded-xl shadow p-4 mb-6">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1204,20 +1252,20 @@ export default function App() {
           </div>
           <div className="grid grid-cols-2 gap-4 mb-6">
             <button onClick={() => { setCashMovementForm({...cashMovementForm, date: selectedDate}); setShowAddCashMovement('IN'); }} className="bg-black text-white p-4 rounded-xl font-semibold text-lg">+ Gelen Para</button>
-            <button onClick={() => { setCashMovementForm({...cashMovementForm, date: selectedDate}); setShowAddCashMovement('OUT'); }} className="bg-red-500 text-white p-4 rounded-xl font-semibold text-lg">+ Ödeme Yap</button>
+            <button onClick={() => { setCashMovementForm({...cashMovementForm, date: selectedDate}); setShowAddCashMovement('OUT'); }} className="bg-red-500 text-white p-4 rounded-xl font-semibold flex items-center justify-center gap-2"><Icon path={IconPaths.arrowUp} size={18}/> Ödeme Yap</button>
           </div>
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="bg-gray-50 p-4 rounded-xl border-2 border-gray-300 text-center"><p className="text-gray-900 font-semibold">Gelen</p><p className="text-2xl font-bold text-gray-900">{formatMoney(totalIn)}</p></div>
             <div className="bg-red-50 p-4 rounded-xl border-2 border-red-200 text-center"><p className="text-red-600 font-semibold">Çıkan</p><p className="text-2xl font-bold text-red-700">{formatMoney(totalOut)}</p></div>
           </div>
-          <div className="bg-white rounded-xl shadow p-6">
+          <div className="rounded-2xl p-6 border border-white/50" style={{ background: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)', boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
             <h3 className="text-lg font-bold text-gray-800 mb-4">Hareketler</h3>
             <div className="space-y-2">
               {todayMovements.map(m => (
                 <div key={m.id} className={`p-4 rounded-lg border-l-4 ${m.type === 'IN' ? 'bg-gray-50 border-l-green-500' : 'bg-red-50 border-l-red-500'}`}>
                   <div className="flex justify-between items-start">
-                    <div><p className={`font-semibold ${m.type === 'IN' ? 'text-gray-900' : 'text-red-600'}`}>{m.type === 'IN' ? '📥 Gelen' : '📤 Ödeme'}</p><p className="text-sm text-gray-600">{m.description}</p><p className="text-xs text-gray-500">{formatTimeTR(m.created_at)} - {m.fullName}</p></div>
-                    <div className="flex items-center gap-2"><p className={`text-xl font-bold ${m.type === 'IN' ? 'text-gray-900' : 'text-red-600'}`}>{m.type === 'IN' ? '+' : '-'}{formatMoney(m.amount)}</p><button onClick={() => initiateDelete('cashMovement', m.id, m.description)} className="bg-red-100 text-red-500 p-1 rounded">🗑️</button></div>
+                    <div><p className={`font-semibold flex items-center gap-1.5 ${m.type === 'IN' ? 'text-emerald-600' : 'text-red-600'}`}><Icon path={m.type === 'IN' ? IconPaths.arrowDown : IconPaths.arrowUp} size={15}/>{m.type === 'IN' ? 'Gelen' : 'Ödeme'}</p><p className="text-sm text-gray-600">{m.description}</p><p className="text-xs text-gray-500">{formatTimeTR(m.created_at)} - {m.fullName}</p></div>
+                    <div className="flex items-center gap-2"><p className={`text-xl font-bold ${m.type === 'IN' ? 'text-emerald-600' : 'text-red-600'}`}>{m.type === 'IN' ? '+' : '-'}{formatMoney(m.amount)}</p><button onClick={() => initiateDelete('cashMovement', m.id, m.description)} className="bg-red-50 text-red-500 hover:bg-red-100 p-1.5 rounded-lg"><Icon path={IconPaths.trash} size={15}/></button></div>
                   </div>
                 </div>
               ))}
@@ -1227,14 +1275,14 @@ export default function App() {
         </main>
         {showAddCashMovement && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-md">
-              <h3 className={`text-xl font-bold mb-4 ${showAddCashMovement === 'IN' ? 'text-gray-900' : 'text-red-600'}`}>{showAddCashMovement === 'IN' ? '📥 Gelen Para' : '📤 Ödeme Yap'}</h3>
+            <div className="rounded-2xl p-6 w-full max-w-md border border-white/60" style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
+              <h3 className={`text-xl font-bold mb-4 flex items-center gap-2 ${showAddCashMovement === 'IN' ? 'text-emerald-600' : 'text-red-600'}`}><Icon path={showAddCashMovement === 'IN' ? IconPaths.arrowDown : IconPaths.arrowUp} size={20}/>{showAddCashMovement === 'IN' ? 'Gelen Para' : 'Ödeme Yap'}</h3>
               <div className="space-y-4">
-                <div><label className="block text-sm font-medium mb-1">Tutar *</label><input type="number" value={cashMovementForm.amount} onChange={(e) => setCashMovementForm({...cashMovementForm, amount: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div>
-                <div><label className="block text-sm font-medium mb-1">Açıklama *</label><input type="text" value={cashMovementForm.description} onChange={(e) => setCashMovementForm({...cashMovementForm, description: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div>
+                <div><label className="block text-sm font-medium mb-1">Tutar *</label><input type="number" value={cashMovementForm.amount} onChange={(e) => setCashMovementForm({...cashMovementForm, amount: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="0" /></div>
+                <div><label className="block text-sm font-medium mb-1">Açıklama *</label><input type="text" value={cashMovementForm.description} onChange={(e) => setCashMovementForm({...cashMovementForm, description: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div>
                 <div><label className="block text-sm font-medium mb-1">Tarih</label><div className="text-lg font-bold border-2 rounded-lg px-4 py-2 bg-gray-50">{formatDateTR(cashMovementForm.date)}</div></div>
               </div>
-              <div className="flex gap-2 mt-6"><button onClick={() => setShowAddCashMovement(null)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddCashMovement} className={`flex-1 text-white py-3 rounded-lg font-semibold ${showAddCashMovement === 'IN' ? 'bg-black' : 'bg-red-500'}`}>Kaydet</button></div>
+              <div className="flex gap-2 mt-6"><button onClick={() => setShowAddCashMovement(null)} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">İptal</button><button onClick={handleAddCashMovement} className={`flex-1 text-white py-3 rounded-lg font-semibold ${showAddCashMovement === 'IN' ? 'bg-black' : 'bg-red-500'}`}>Kaydet</button></div>
             </div>
           </div>
         )}
@@ -1248,9 +1296,9 @@ export default function App() {
     const allowedBusinesses = getUserAllowedBusinesses();
     if (!selectedBusiness) {
       return (
-        <div className="min-h-screen bg-gray-100">
+        <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #f5f5f7 0%, #e8e8ec 50%, #dddde3 100%)' }}>
           <LoadingOverlay />
-          <header className="bg-white shadow border-b-4 border-black"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">📊 Gün Sonu</h1></div><button onClick={handleLogout} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">Çıkış</button></div></header>
+          <header className="sticky top-0 z-30 border-b border-white/50" style={{ background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)' }}><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-black p-1 -ml-1 rounded-lg hover:bg-black/5"><Icon path={IconPaths.back} size={22} /></button><h1 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Icon path={IconPaths.chart} size={20} /> Gün Sonu</h1></div><button onClick={handleLogout} className="inline-flex items-center gap-1.5 bg-black/5 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-black/10"><Icon path={IconPaths.logout} size={15} /> Çıkış</button></div></header>
           <main className="max-w-lg mx-auto px-4 py-8"><div className="space-y-4">{allowedBusinesses.map(b => (<button key={b.id} onClick={() => setSelectedBusiness(b)} className="w-full bg-white p-6 rounded-xl shadow text-left border-l-4 border-black"><p className="text-xl font-bold">{b.name}</p><p className="text-sm text-gray-500">{getBusinessReports(b.id).length} rapor</p></button>))}</div></main>
         </div>
       );
@@ -1258,10 +1306,10 @@ export default function App() {
     const currentReport = getReportByDate(selectedBusiness.id, selectedDate);
     const isToday = selectedDate === getTurkeyDate();
     return (
-      <div className="min-h-screen bg-gray-100">
+      <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #f5f5f7 0%, #e8e8ec 50%, #dddde3 100%)' }}>
         <LoadingOverlay />
         <ExpenseConfirmModal />
-        <header className="bg-white shadow border-b-4 border-black"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setSelectedBusiness(null)} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">📊 {selectedBusiness.name}</h1></div><button onClick={handleLogout} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">Çıkış</button></div></header>
+        <header className="sticky top-0 z-30 border-b border-white/50" style={{ background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)' }}><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setSelectedBusiness(null)} className="text-black p-1 -ml-1 rounded-lg hover:bg-black/5"><Icon path={IconPaths.back} size={22} /></button><h1 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Icon path={IconPaths.chart} size={20} /> {selectedBusiness.name}</h1></div><button onClick={handleLogout} className="inline-flex items-center gap-1.5 bg-black/5 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-black/10"><Icon path={IconPaths.logout} size={15} /> Çıkış</button></div></header>
         <main className="max-w-4xl mx-auto px-4 py-6">
           <div className="bg-white rounded-xl shadow p-4 mb-6">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1269,7 +1317,7 @@ export default function App() {
               <div className="text-center"><div className="text-2xl font-bold border-2 rounded-lg px-6 py-3 bg-gray-50">{formatDateTR(selectedDate)}</div><input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="mt-2 text-sm border rounded-lg px-3 py-1" /></div>
               <button onClick={() => changeDate(1)} className="bg-gray-100 text-black px-4 py-2 rounded-lg font-semibold">→</button>
             </div>
-            <div className="flex gap-2 mt-4 justify-center"><button onClick={() => setSelectedDate(getTurkeyDate())} className="bg-black text-white px-4 py-2 rounded-lg text-sm">Bugün</button><button onClick={() => setExpenseSearch({ ...expenseSearch, open: !expenseSearch.open })} className="bg-black text-white px-4 py-2 rounded-lg text-sm">🔍 Gider Ara</button></div>
+            <div className="flex gap-2 mt-4 justify-center"><button onClick={() => setSelectedDate(getTurkeyDate())} className="bg-black text-white px-4 py-2 rounded-lg text-sm">Bugün</button><button onClick={() => setExpenseSearch({ ...expenseSearch, open: !expenseSearch.open })} className="bg-black text-white px-4 py-2 rounded-lg text-sm inline-flex items-center gap-1.5"><Icon path={IconPaths.search} size={15}/> Gider Ara</button></div>
           </div>
 
           {expenseSearch.open && (() => {
@@ -1279,13 +1327,13 @@ export default function App() {
             return (
               <div className="bg-white rounded-xl shadow p-4 mb-6 border-2 border-black">
                 <div className="flex justify-between items-center mb-3">
-                  <p className="font-bold text-gray-800">🔍 Gider Ara</p>
-                  <button onClick={() => setExpenseSearch({ open: false, query: '', from: '', to: '' })} className="text-gray-400 text-sm">✕ Kapat</button>
+                  <p className="font-bold text-gray-900 flex items-center gap-2"><Icon path={IconPaths.search} size={16}/> Gider Ara</p>
+                  <button onClick={() => setExpenseSearch({ open: false, query: '', from: '', to: '' })} className="text-gray-400 hover:text-gray-700 text-sm inline-flex items-center gap-1"><Icon path={IconPaths.close} size={14}/> Kapat</button>
                 </div>
                 <input type="text" value={expenseSearch.query} onChange={(e) => setExpenseSearch({ ...expenseSearch, query: e.target.value })} className="w-full px-4 py-2 border-2 rounded-lg mb-2" placeholder="Ara: Emre, Ambalajcı, personel adı, açıklama..." />
                 <div className="grid grid-cols-2 gap-2 mb-3">
-                  <div><label className="text-xs text-gray-500">Başlangıç (ops.)</label><input type="date" value={expenseSearch.from} onChange={(e) => setExpenseSearch({ ...expenseSearch, from: e.target.value })} className="w-full px-3 py-2 border-2 rounded-lg text-sm" /></div>
-                  <div><label className="text-xs text-gray-500">Bitiş (ops.)</label><input type="date" value={expenseSearch.to} onChange={(e) => setExpenseSearch({ ...expenseSearch, to: e.target.value })} className="w-full px-3 py-2 border-2 rounded-lg text-sm" /></div>
+                  <div><label className="text-xs text-gray-500">Başlangıç (ops.)</label><input type="date" value={expenseSearch.from} onChange={(e) => setExpenseSearch({ ...expenseSearch, from: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div>
+                  <div><label className="text-xs text-gray-500">Bitiş (ops.)</label><input type="date" value={expenseSearch.to} onChange={(e) => setExpenseSearch({ ...expenseSearch, to: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div>
                 </div>
                 {hasFilter ? (
                   <>
@@ -1300,8 +1348,8 @@ export default function App() {
                         <div key={e.id || i} className="flex justify-between items-center bg-gray-50 p-2 rounded-lg mb-1">
                           <div>
                             <span className="text-sm">{e.description}</span>
-                            {e.employee_id && (<span className="ml-2 text-xs bg-black text-white px-1.5 py-0.5 rounded-full">👤 {getEmployeeName(e.employee_id)}</span>)}
-                            {e.is_external && (<span className="ml-2 text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded-full">💸 Dışarıdan</span>)}
+                            {e.employee_id && (<span className="ml-2 inline-flex items-center gap-1 text-xs bg-black text-white px-1.5 py-0.5 rounded-full"><Icon path={IconPaths.user} size={10}/>{getEmployeeName(e.employee_id)}</span>)}
+                            {e.is_external && (<span className="ml-2 text-xs bg-gray-600 text-white px-1.5 py-0.5 rounded-full">Dışarıdan</span>)}
                             <span className="text-xs text-gray-400 block">{formatDateTR(e.date)}</span>
                           </div>
                           <span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span>
@@ -1317,32 +1365,32 @@ export default function App() {
           })()}
           {(isToday || user?.role === 'admin') && !currentReport && (<button onClick={() => { setReportForm({...reportForm, date: selectedDate}); setExpensesList([]); setShowAddReport(true); }} className="w-full bg-black text-white py-4 rounded-xl font-semibold mb-6">+ Rapor Ekle</button>)}
           {currentReport ? (
-            <div className="bg-white rounded-xl shadow p-6">
+            <div className="rounded-2xl p-6 border border-white/50" style={{ background: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)', boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
               <div className="flex justify-between items-start mb-4 flex-wrap gap-2">
-                <div><p className="text-2xl font-bold">{formatDateTR(currentReport.date)}</p><p className="text-sm text-gray-500">Ciro: {formatMoney(Number(currentReport.credit_card) + Number(currentReport.cash) + Number(currentReport.meal_cards))}</p><p className="text-xs text-black mt-1">👤 {currentReport.fullName} - {formatTimeTR(currentReport.created_at)}</p></div>
+                <div><p className="text-2xl font-bold">{formatDateTR(currentReport.date)}</p><p className="text-sm text-gray-500">Ciro: {formatMoney(Number(currentReport.credit_card) + Number(currentReport.cash) + Number(currentReport.meal_cards))}</p><p className="text-xs text-black mt-1">{currentReport.fullName} - {formatTimeTR(currentReport.created_at)}</p></div>
                 <div className="flex items-center gap-2">
                   <div className={`px-4 py-2 rounded-lg text-sm font-bold ${calcCashDiff(currentReport) >= 0 ? 'bg-gray-100 text-gray-900' : 'bg-red-100 text-red-700'}`}>Fark: {formatMoney(calcCashDiff(currentReport))}</div>
-                  {user?.role === 'admin' && (<div className="flex gap-1"><button onClick={() => openEditReport(currentReport)} className="bg-gray-100 text-black px-3 py-2 rounded-lg text-sm">✏️</button><button onClick={() => initiateDelete('report', currentReport.id, `${formatDateTR(currentReport.date)} raporu`)} className="bg-red-100 text-red-600 px-3 py-2 rounded-lg text-sm">🗑️</button></div>)}
+                  {user?.role === 'admin' && (<div className="flex gap-1"><button onClick={() => openEditReport(currentReport)} className="bg-black/5 text-gray-700 hover:bg-black/10 p-2 rounded-lg"><Icon path={IconPaths.edit} size={15}/></button><button onClick={() => initiateDelete('report', currentReport.id, `${formatDateTR(currentReport.date)} raporu`)} className="bg-red-50 text-red-600 hover:bg-red-100 p-2 rounded-lg"><Icon path={IconPaths.trash} size={15}/></button></div>)}
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                <div className="bg-gray-50 p-3 rounded-lg border-2 border-gray-300"><p className="text-black font-semibold text-xs">💳 Kredi Kartı</p><p className="text-lg font-bold">{formatMoney(currentReport.credit_card)}</p></div>
-                <div className="bg-gray-50 p-3 rounded-lg border-2 border-gray-300"><p className="text-gray-900 font-semibold text-xs">💵 Nakit</p><p className="text-lg font-bold">{formatMoney(currentReport.cash)}</p></div>
-                <div className="bg-red-50 p-3 rounded-lg border-2 border-red-200"><p className="text-red-600 font-semibold text-xs">🎫 Yemek Kartı</p><p className="text-lg font-bold">{formatMoney(currentReport.meal_cards)}</p></div>
-                <div className="bg-gray-50 p-3 rounded-lg border-2 border-gray-300"><p className="text-black font-semibold text-xs">💰 Eldeki Nakit</p><p className="text-lg font-bold">{formatMoney(currentReport.actual_cash)}</p></div>
+                <div className="bg-gray-50 p-3 rounded-lg border-2 border-gray-300"><p className="text-emerald-600 font-semibold text-xs flex items-center gap-1"><Icon path={IconPaths.card} size={13}/> Kredi Kartı</p><p className="text-lg font-bold">{formatMoney(currentReport.credit_card)}</p></div>
+                <div className="bg-gray-50 p-3 rounded-lg border-2 border-gray-300"><p className="text-emerald-600 font-semibold text-xs flex items-center gap-1"><Icon path={IconPaths.cash} size={13}/> Nakit</p><p className="text-lg font-bold">{formatMoney(currentReport.cash)}</p></div>
+                <div className="bg-red-50 p-3 rounded-lg border-2 border-red-200"><p className="text-emerald-600 font-semibold text-xs flex items-center gap-1"><Icon path={IconPaths.meal} size={13}/> Yemek Kartı</p><p className="text-lg font-bold">{formatMoney(currentReport.meal_cards)}</p></div>
+                <div className="bg-gray-50 p-3 rounded-lg border border-gray-200"><p className="text-gray-600 font-semibold text-xs flex items-center gap-1"><Icon path={IconPaths.wallet} size={13}/> Eldeki Nakit</p><p className="text-lg font-bold">{formatMoney(currentReport.actual_cash)}</p></div>
               </div>
-              <div className="bg-red-50 p-4 rounded-lg border-2 border-red-200 mb-4"><div className="flex justify-between mb-2"><p className="text-red-600 font-semibold">📉 Giderler (Kasadan)</p><p className="font-bold text-red-700">{formatMoney(getExpTotal(currentReport.expenses))}</p></div>{(currentReport.expenses || []).filter(e => !e.is_external).length > 0 ? (currentReport.expenses.filter(e => !e.is_external).map((e, i) => (<div key={i} className="flex justify-between text-sm bg-white p-2 rounded mb-1"><span>{e.description}{e.employee_id && (<span className="ml-2 text-xs bg-black text-white px-1.5 py-0.5 rounded-full">👤 {getEmployeeName(e.employee_id)}</span>)}</span><span className="text-red-600 font-semibold">{formatMoney(e.amount)}</span></div>))) : (<p className="text-sm text-gray-500 text-center py-2">Gider girilmedi</p>)}</div>
-              {getExtTotal(currentReport.expenses) > 0 && (<div className="bg-blue-50 p-4 rounded-lg border-2 border-blue-200 mb-4"><div className="flex justify-between mb-2"><p className="text-blue-600 font-semibold">💸 Dışarıdan Gelen (Havale)</p><p className="font-bold text-blue-700">{formatMoney(getExtTotal(currentReport.expenses))}</p></div><p className="text-xs text-blue-500 mb-2">Bu tutarlar kasadan düşmez, dışarıdan gelen parayla ödenmiştir.</p>{currentReport.expenses.filter(e => e.is_external).map((e, i) => (<div key={i} className="flex justify-between text-sm bg-white p-2 rounded mb-1"><span>{e.description}{e.employee_id && (<span className="ml-2 text-xs bg-black text-white px-1.5 py-0.5 rounded-full">👤 {getEmployeeName(e.employee_id)}</span>)}</span><span className="text-blue-600 font-semibold">{formatMoney(e.amount)}</span></div>))}</div>)}
+              <div className="bg-red-50 p-4 rounded-lg border-2 border-red-200 mb-4"><div className="flex justify-between mb-2"><p className="text-red-600 font-semibold flex items-center gap-1"><Icon path={IconPaths.arrowDown} size={15}/> Giderler (Kasadan)</p><p className="font-bold text-red-700">{formatMoney(getExpTotal(currentReport.expenses))}</p></div>{(currentReport.expenses || []).filter(e => !e.is_external).length > 0 ? (currentReport.expenses.filter(e => !e.is_external).map((e, i) => (<div key={i} className="flex justify-between text-sm bg-white p-2 rounded mb-1"><span>{e.description}{e.employee_id && (<span className="ml-2 inline-flex items-center gap-1 text-xs bg-black text-white px-1.5 py-0.5 rounded-full"><Icon path={IconPaths.user} size={10}/>{getEmployeeName(e.employee_id)}</span>)}</span><span className="text-red-600 font-semibold">{formatMoney(e.amount)}</span></div>))) : (<p className="text-sm text-gray-500 text-center py-2">Gider girilmedi</p>)}</div>
+              {getExtTotal(currentReport.expenses) > 0 && (<div className="bg-gray-100 p-4 rounded-lg border border-gray-300 mb-4"><div className="flex justify-between mb-2"><p className="text-gray-700 font-semibold">Dışarıdan Gelen (Havale)</p><p className="font-bold text-gray-800">{formatMoney(getExtTotal(currentReport.expenses))}</p></div><p className="text-xs text-gray-500 mb-2">Bu tutarlar kasadan düşmez, dışarıdan gelen parayla ödenmiştir.</p>{currentReport.expenses.filter(e => e.is_external).map((e, i) => (<div key={i} className="flex justify-between text-sm bg-white p-2 rounded mb-1"><span>{e.description}{e.employee_id && (<span className="ml-2 inline-flex items-center gap-1 text-xs bg-black text-white px-1.5 py-0.5 rounded-full"><Icon path={IconPaths.user} size={10}/>{getEmployeeName(e.employee_id)}</span>)}</span><span className="text-gray-700 font-semibold">{formatMoney(e.amount)}</span></div>))}</div>)}
             </div>
-          ) : (<div className="bg-white rounded-xl shadow p-12 text-center"><p className="text-5xl mb-4">📋</p><p className="text-xl text-gray-500">{formatDateTR(selectedDate)} - Kayıt yok</p></div>)}
+          ) : (<div className="bg-white rounded-xl shadow p-12 text-center"><div className="w-14 h-14 mx-auto mb-4 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center"><Icon path={IconPaths.note} size={26}/></div><p className="text-xl text-gray-500">{formatDateTR(selectedDate)} - Kayıt yok</p></div>)}
           <div className="mt-6"><h3 className="text-lg font-bold mb-4">Son Raporlar</h3><div className="space-y-2">{getBusinessReports(selectedBusiness.id).slice(0, 5).map(r => (<button key={r.id} onClick={() => setSelectedDate(r.date)} className={`w-full text-left p-4 rounded-lg ${selectedDate === r.date ? 'bg-gray-100 border-2 border-black' : 'bg-white'}`}><div className="flex justify-between"><span className="font-semibold">{formatDateTR(r.date)}</span><span>{formatMoney(Number(r.credit_card) + Number(r.cash) + Number(r.meal_cards))}</span></div></button>))}</div></div>
         </main>
         
         {/* Add Report Modal */}
-        {showAddReport && (<div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-lg my-8 max-h-[90vh] overflow-y-auto"><h3 className="text-xl font-bold mb-4 text-black">📊 Gün Sonu - {selectedBusiness.name}</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tarih</label><div className="text-lg font-bold border-2 rounded-lg px-4 py-2 bg-gray-50">{formatDateTR(reportForm.date)}</div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">💳 Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div><div><label className="text-sm font-medium">💵 Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">🎫 Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div><div><label className="text-sm font-medium">💰 Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div></div><div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-3">📉 Giderler</label><div className="space-y-2 mb-3"><div className="flex gap-2"><input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} className="flex-1 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-red-500 text-white px-4 py-2 rounded-lg">+</button></div>{getActiveEmployees().length > 0 && (<select value={newExpense.employee_id} onChange={(e) => setNewExpense({...newExpense, employee_id: e.target.value})} className="w-full px-3 py-2 border-2 rounded-lg text-sm bg-white text-gray-700"><option value="">Normal gider (personel maaşı değil)</option>{getActiveEmployees().map(emp => (<option key={emp.id} value={emp.id}>👤 {emp.name} — maaşından düşülsün</option>))}</select>)}<label className="flex items-center gap-2 bg-blue-50 border-2 border-blue-200 rounded-lg px-3 py-2 cursor-pointer"><input type="checkbox" checked={newExpense.is_external} onChange={(e) => setNewExpense({...newExpense, is_external: e.target.checked})} className="w-4 h-4 accent-blue-600" /><span className="text-sm text-blue-700 font-medium">💸 Dışarıdan gelen (havale) — kasadan düşme</span></label></div><div className="max-h-48 overflow-y-auto">{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}{e.employee_id && (<span className="ml-2 text-xs bg-black text-white px-1.5 py-0.5 rounded-full">👤 {getEmployeeName(e.employee_id)}</span>)}{e.is_external && (<span className="ml-2 text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded-full">💸 Dışarıdan</span>)}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => startEditExpense(e)} className="text-gray-400 hover:text-black" title="Düzenle">✏️</button><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400">✕</button></div></div>))}</div><div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Kasa Gideri:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div>{getTotalExternal() > 0 && (<div className="flex justify-between pt-1"><span className="font-semibold text-blue-700">💸 Dışarıdan Gelen:</span><span className="font-bold text-blue-700">{formatMoney(getTotalExternal())}</span></div>)}</div><div><label className="text-sm font-medium">📝 Notlar</label><textarea value={reportForm.notes} onChange={(e) => setReportForm({...reportForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowAddReport(false); setExpensesList([]); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={() => handleSaveReportClick('add')} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Kaydet</button></div></div></div>)}
+        {showAddReport && (<div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto"><div className="rounded-2xl p-6 w-full max-w-lg my-8 max-h-[90vh] overflow-y-auto border border-white/60" style={{ background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}><h3 className="text-xl font-bold mb-4 text-gray-900">Gün Sonu — {selectedBusiness.name}</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tarih</label><div className="text-lg font-bold border-2 rounded-lg px-4 py-2 bg-gray-50">{formatDateTR(reportForm.date)}</div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium text-gray-600">Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="0" /></div><div><label className="text-sm font-medium text-gray-600">Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="0" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium text-gray-600">Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="0" /></div><div><label className="text-sm font-medium text-gray-600">Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="0" /></div></div><div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-3">Giderler</label><div className="space-y-2 mb-3"><div className="flex gap-2"><input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none transition bg-white/70" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none transition bg-white/70" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-black text-white px-4 py-2 rounded-lg flex items-center justify-center"><Icon path={IconPaths.plus} size={18}/></button></div>{getActiveEmployees().length > 0 && (<select value={newExpense.employee_id} onChange={(e) => setNewExpense({...newExpense, employee_id: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white/70 text-gray-700 focus:border-black focus:outline-none transition"><option value="">Normal gider</option>{getActiveEmployees().map(emp => (<option key={emp.id} value={emp.id}>{emp.name}</option>))}</select>)}<label className="flex items-center gap-2 bg-gray-100 border border-gray-300 rounded-lg px-3 py-2 cursor-pointer"><input type="checkbox" checked={newExpense.is_external} onChange={(e) => setNewExpense({...newExpense, is_external: e.target.checked})} className="w-4 h-4 accent-black" /><span className="text-sm text-gray-700 font-medium">Dışarıdan gelen (havale) — kasadan düşmez</span></label></div><div className="max-h-48 overflow-y-auto">{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}{e.employee_id && (<span className="ml-2 inline-flex items-center gap-1 text-xs bg-black text-white px-1.5 py-0.5 rounded-full"><Icon path={IconPaths.user} size={10}/>{getEmployeeName(e.employee_id)}</span>)}{e.is_external && (<span className="ml-2 text-xs bg-gray-600 text-white px-1.5 py-0.5 rounded-full">Dışarıdan</span>)}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => startEditExpense(e)} className="text-gray-400 hover:text-black" title="Düzenle"><Icon path={IconPaths.edit} size={15}/></button><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400 hover:text-red-600" title="Kaldır"><Icon path={IconPaths.close} size={15}/></button></div></div>))}</div><div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Kasa Gideri:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div>{getTotalExternal() > 0 && (<div className="flex justify-between pt-1"><span className="font-semibold text-gray-600">Dışarıdan Gelen:</span><span className="font-bold text-gray-700">{formatMoney(getTotalExternal())}</span></div>)}</div><div><label className="text-sm font-medium text-gray-600">Notlar</label><textarea value={reportForm.notes} onChange={(e) => setReportForm({...reportForm, notes: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowAddReport(false); setExpensesList([]); }} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">İptal</button><button onClick={() => handleSaveReportClick('add')} className="flex-1 bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition">Kaydet</button></div></div></div>)}
         
         {/* Edit Report Modal */}
-        {showEditReport && (<div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-lg my-8 max-h-[90vh] overflow-y-auto"><h3 className="text-xl font-bold mb-4 text-black">✏️ Rapor Düzenle</h3><div className="space-y-4"><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">💳 Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">💵 Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium">🎫 Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">💰 Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div></div><div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-3">📉 Giderler</label><div className="space-y-2 mb-3"><div className="flex gap-2"><input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} className="flex-1 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border-2 rounded-lg text-sm" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-red-500 text-white px-4 py-2 rounded-lg">+</button></div>{getActiveEmployees().length > 0 && (<select value={newExpense.employee_id} onChange={(e) => setNewExpense({...newExpense, employee_id: e.target.value})} className="w-full px-3 py-2 border-2 rounded-lg text-sm bg-white text-gray-700"><option value="">Normal gider (personel maaşı değil)</option>{getActiveEmployees().map(emp => (<option key={emp.id} value={emp.id}>👤 {emp.name} — maaşından düşülsün</option>))}</select>)}<label className="flex items-center gap-2 bg-blue-50 border-2 border-blue-200 rounded-lg px-3 py-2 cursor-pointer"><input type="checkbox" checked={newExpense.is_external} onChange={(e) => setNewExpense({...newExpense, is_external: e.target.checked})} className="w-4 h-4 accent-blue-600" /><span className="text-sm text-blue-700 font-medium">💸 Dışarıdan gelen (havale) — kasadan düşme</span></label></div><div className="max-h-48 overflow-y-auto">{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}{e.employee_id && (<span className="ml-2 text-xs bg-black text-white px-1.5 py-0.5 rounded-full">👤 {getEmployeeName(e.employee_id)}</span>)}{e.is_external && (<span className="ml-2 text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded-full">💸 Dışarıdan</span>)}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => startEditExpense(e)} className="text-gray-400 hover:text-black" title="Düzenle">✏️</button><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400">✕</button></div></div>))}</div><div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Kasa Gideri:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div>{getTotalExternal() > 0 && (<div className="flex justify-between pt-1"><span className="font-semibold text-blue-700">💸 Dışarıdan Gelen:</span><span className="font-bold text-blue-700">{formatMoney(getTotalExternal())}</span></div>)}</div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowEditReport(false); setExpensesList([]); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={() => handleSaveReportClick('edit')} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
+        {showEditReport && (<div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto"><div className="rounded-2xl p-6 w-full max-w-lg my-8 max-h-[90vh] overflow-y-auto border border-white/60" style={{ background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}><h3 className="text-xl font-bold mb-4 text-gray-900">Rapor Düzenle</h3><div className="space-y-4"><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium text-gray-600">Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div><div><label className="text-sm font-medium text-gray-600">Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium text-gray-600">Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div><div><label className="text-sm font-medium text-gray-600">Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div></div><div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-3">Giderler</label><div className="space-y-2 mb-3"><div className="flex gap-2"><input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none transition bg-white/70" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none transition bg-white/70" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-black text-white px-4 py-2 rounded-lg flex items-center justify-center"><Icon path={IconPaths.plus} size={18}/></button></div>{getActiveEmployees().length > 0 && (<select value={newExpense.employee_id} onChange={(e) => setNewExpense({...newExpense, employee_id: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white/70 text-gray-700 focus:border-black focus:outline-none transition"><option value="">Normal gider</option>{getActiveEmployees().map(emp => (<option key={emp.id} value={emp.id}>{emp.name}</option>))}</select>)}<label className="flex items-center gap-2 bg-gray-100 border border-gray-300 rounded-lg px-3 py-2 cursor-pointer"><input type="checkbox" checked={newExpense.is_external} onChange={(e) => setNewExpense({...newExpense, is_external: e.target.checked})} className="w-4 h-4 accent-black" /><span className="text-sm text-gray-700 font-medium">Dışarıdan gelen (havale) — kasadan düşmez</span></label></div><div className="max-h-48 overflow-y-auto">{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}{e.employee_id && (<span className="ml-2 inline-flex items-center gap-1 text-xs bg-black text-white px-1.5 py-0.5 rounded-full"><Icon path={IconPaths.user} size={10}/>{getEmployeeName(e.employee_id)}</span>)}{e.is_external && (<span className="ml-2 text-xs bg-gray-600 text-white px-1.5 py-0.5 rounded-full">Dışarıdan</span>)}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => startEditExpense(e)} className="text-gray-400 hover:text-black" title="Düzenle"><Icon path={IconPaths.edit} size={15}/></button><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400 hover:text-red-600" title="Kaldır"><Icon path={IconPaths.close} size={15}/></button></div></div>))}</div><div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Kasa Gideri:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div>{getTotalExternal() > 0 && (<div className="flex justify-between pt-1"><span className="font-semibold text-gray-600">Dışarıdan Gelen:</span><span className="font-bold text-gray-700">{formatMoney(getTotalExternal())}</span></div>)}</div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowEditReport(false); setExpensesList([]); }} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">İptal</button><button onClick={() => handleSaveReportClick('edit')} className="flex-1 bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition">Güncelle</button></div></div></div>)}
         
         <DeleteConfirmModal />
       </div>
@@ -1354,75 +1402,75 @@ export default function App() {
     const allowedBusinesses = getUserAllowedBusinesses();
     if (!selectedBusiness) {
       return (
-        <div className="min-h-screen bg-gray-100">
+        <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #f5f5f7 0%, #e8e8ec 50%, #dddde3 100%)' }}>
           <LoadingOverlay />
-          <header className="bg-white shadow border-b border-gray-200"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">📦 Toptancı</h1></div><button onClick={handleLogout} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">Çıkış</button></div></header>
+          <header className="sticky top-0 z-30 border-b border-white/50" style={{ background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)' }}><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => setScreen('menu')} className="text-black p-1 -ml-1 rounded-lg hover:bg-black/5"><Icon path={IconPaths.back} size={22} /></button><h1 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Icon path={IconPaths.box} size={20} /> Toptancı</h1></div><button onClick={handleLogout} className="inline-flex items-center gap-1.5 bg-black/5 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-black/10"><Icon path={IconPaths.logout} size={15} /> Çıkış</button></div></header>
           <main className="max-w-lg mx-auto px-4 py-8"><div className="space-y-4">{allowedBusinesses.map(b => (<button key={b.id} onClick={() => setSelectedBusiness(b)} className="w-full bg-white p-6 rounded-xl shadow text-left border-l-4 border-black"><p className="text-xl font-bold">{b.name}</p></button>))}</div></main>
         </div>
       );
     }
     const totalDebt = getTotalDebt();
     return (
-      <div className="min-h-screen bg-gray-100">
+      <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #f5f5f7 0%, #e8e8ec 50%, #dddde3 100%)' }}>
         <LoadingOverlay />
         <InvoiceModal />
-        <header className="bg-white shadow border-b border-gray-200"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => { setSelectedBusiness(null); setSelectedSupplier(null); setSearchQuery(''); }} className="text-2xl text-black">←</button><div><h1 className="text-xl font-bold">{selectedBusiness.name}</h1><p className="text-sm text-gray-500">{user?.full_name} {user?.role === 'admin' && <span className="bg-black text-white px-2 rounded text-xs ml-1">Admin</span>}</p></div></div><button onClick={handleLogout} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">Çıkış</button></div></header>
+        <header className="sticky top-0 z-30 border-b border-white/50" style={{ background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)' }}><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => { setSelectedBusiness(null); setSelectedSupplier(null); setSearchQuery(''); }} className="text-black p-1 -ml-1 rounded-lg hover:bg-black/5"><Icon path={IconPaths.back} size={22} /></button><div><h1 className="text-xl font-bold">{selectedBusiness.name}</h1><p className="text-sm text-gray-500">{user?.full_name} {user?.role === 'admin' && <span className="bg-black text-white px-2 rounded text-xs ml-1">Admin</span>}</p></div></div><button onClick={handleLogout} className="inline-flex items-center gap-1.5 bg-black/5 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-black/10"><Icon path={IconPaths.logout} size={15} /> Çıkış</button></div></header>
         <main className="max-w-7xl mx-auto px-4 py-6">
           <div className={`rounded-2xl p-6 text-white mb-6 ${totalDebt > 0 ? 'bg-gradient-to-r from-red-500 to-red-700' : 'bg-black'}`}><p className="text-white/80 text-sm">Toplam {totalDebt > 0 ? 'Borç' : 'Durum'}</p><p className="text-4xl font-bold">{formatMoney(Math.abs(totalDebt))}</p><p className="text-white/80 text-sm mt-2">{getBusinessSuppliers().length} toptancı</p></div>
           <div className="grid md:grid-cols-2 gap-6">
-            <div className="bg-white rounded-xl shadow p-6">
-              <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">Toptancılar</h2><button onClick={() => setShowAddSupplier(true)} className="bg-black text-white px-4 py-2 rounded-lg text-sm">+ Ekle</button></div>
-              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="🔍 Ara..." className="w-full px-4 py-2 border-2 rounded-lg mb-4" />
+            <div className="rounded-2xl p-6 border border-white/50" style={{ background: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)', boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
+              <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-bold">Toptancılar</h2><button onClick={() => setShowAddSupplier(true)} className="bg-black text-white px-3 py-2 rounded-lg text-sm inline-flex items-center gap-1.5"><Icon path={IconPaths.plus} size={15}/> Ekle</button></div>
+              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Ara..." className="w-full px-4 py-2 border-2 rounded-lg mb-4" />
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {getFilteredSuppliers().map(s => { const bal = getSupplierBalance(s.id); return (<div key={s.id} onClick={() => setSelectedSupplier(s)} className={`p-4 rounded-lg cursor-pointer ${selectedSupplier?.id === s.id ? 'bg-gray-100 border-2 border-black' : 'bg-gray-50'}`}><div className="flex justify-between"><div><p className="font-semibold">{s.name}</p>{s.phone && <p className="text-sm text-gray-500">{s.phone}</p>}</div><div className="text-right"><p className={`font-bold ${bal > 0 ? 'text-red-600' : bal < 0 ? 'text-gray-900' : 'text-gray-600'}`}>{formatMoney(Math.abs(bal))}</p><p className={`text-xs ${bal > 0 ? 'text-red-500' : bal < 0 ? 'text-gray-900' : 'text-gray-400'}`}>{bal > 0 ? 'Borç' : bal < 0 ? 'Alacak' : 'Eşit'}</p></div></div></div>); })}
                 {getFilteredSuppliers().length === 0 && <p className="text-center text-gray-500 py-8">Toptancı yok</p>}
               </div>
             </div>
-            <div className="bg-white rounded-xl shadow p-6">
+            <div className="rounded-2xl p-6 border border-white/50" style={{ background: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)', boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
               {selectedSupplier ? (<>
                 <div className="flex justify-between items-start mb-4">
                   <div><h2 className="text-xl font-bold">{selectedSupplier.name}</h2>{selectedSupplier.phone && <p className="text-gray-500">{selectedSupplier.phone}</p>}</div>
                   {user?.role === 'admin' && (
                     <div className="flex gap-1">
-                      <button onClick={() => openEditSupplier(selectedSupplier)} className="bg-gray-100 text-black px-3 py-1 rounded-lg text-sm">✏️</button>
-                      <button onClick={() => initiateDelete('supplier', selectedSupplier.id, selectedSupplier.name)} className="bg-red-100 text-red-600 px-3 py-1 rounded-lg text-sm">🗑️</button>
+                      <button onClick={() => openEditSupplier(selectedSupplier)} className="bg-black/5 text-gray-700 hover:bg-black/10 p-2 rounded-lg"><Icon path={IconPaths.edit} size={15}/></button>
+                      <button onClick={() => initiateDelete('supplier', selectedSupplier.id, selectedSupplier.name)} className="bg-red-50 text-red-600 hover:bg-red-100 p-2 rounded-lg"><Icon path={IconPaths.trash} size={15}/></button>
                     </div>
                   )}
                 </div>
-                <div className="flex gap-2 mb-4"><button onClick={() => setShowAddTransaction('ALIM')} className="flex-1 bg-red-500 text-white py-3 rounded-lg font-semibold">+ Mal Alımı</button><button onClick={() => setShowAddTransaction('ODEME')} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">+ Ödeme</button></div>
+                <div className="flex gap-2 mb-4"><button onClick={() => setShowAddTransaction('ALIM')} className="flex-1 bg-red-500 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2"><Icon path={IconPaths.box} size={16}/> Mal Alımı</button><button onClick={() => setShowAddTransaction('ODEME')} className="flex-1 bg-emerald-600 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2"><Icon path={IconPaths.wallet} size={16}/> Ödeme</button></div>
                 <div className="border-t pt-4"><h3 className="font-semibold mb-3">İşlemler</h3><div className="space-y-2 max-h-80 overflow-y-auto">
                   {transactions.filter(t => t.supplier_id === selectedSupplier.id).map(tx => (
                     <div key={tx.id} className={`p-3 bg-gray-50 rounded-lg border-l-4 ${tx.type === 'ALIM' ? 'border-l-red-500' : 'border-l-green-500'}`}>
                       <div className="flex justify-between items-start">
                         <div>
-                          <p className={`font-semibold ${tx.type === 'ALIM' ? 'text-red-600' : 'text-gray-900'}`}>{tx.type === 'ALIM' ? '📦 Alım' : '💰 Ödeme'}</p>
+                          <p className={`font-semibold flex items-center gap-1.5 ${tx.type === 'ALIM' ? 'text-red-600' : 'text-emerald-600'}`}><Icon path={tx.type === 'ALIM' ? IconPaths.box : IconPaths.wallet} size={15}/>{tx.type === 'ALIM' ? 'Alım' : 'Ödeme'}</p>
                           <p className="text-xs text-gray-500">{formatDateTR(tx.date)} - {formatTimeTR(tx.created_at)}</p>
                           <p className="text-xs text-gray-400">{getPaymentLabel(tx.payment_method)}</p>
                           {tx.description && <p className="text-xs text-gray-400">{tx.description}</p>}
-                          <p className="text-xs text-black">👤 {tx.fullName}</p>
-                          {tx.invoice_url && (<button onClick={() => setViewInvoice(tx.invoice_url)} className="text-xs text-black mt-1 hover:underline">📄 Faturayı Gör</button>)}
+                          <p className="text-xs text-black">{tx.fullName}</p>
+                          {tx.invoice_url && (<button onClick={() => setViewInvoice(tx.invoice_url)} className="text-xs text-black mt-1 hover:underline">Faturayı Gör</button>)}
                         </div>
                         <div className="flex items-center gap-2">
-                          <p className={`font-bold ${tx.type === 'ALIM' ? 'text-red-600' : 'text-gray-900'}`}>{tx.type === 'ALIM' ? '+' : '-'}{formatMoney(tx.amount)}</p>
-                          {user?.role === 'admin' && (<div className="flex flex-col gap-1"><button onClick={() => openEditTransaction(tx)} className="bg-gray-100 text-black p-1 rounded text-xs">✏️</button><button onClick={() => initiateDelete('transaction', tx.id, `${formatDateTR(tx.date)} - ${formatMoney(tx.amount)}`)} className="bg-red-100 text-red-500 p-1 rounded text-xs">🗑️</button></div>)}
+                          <p className={`font-bold ${tx.type === 'ALIM' ? 'text-red-600' : 'text-emerald-600'}`}>{tx.type === 'ALIM' ? '+' : '-'}{formatMoney(tx.amount)}</p>
+                          {user?.role === 'admin' && (<div className="flex flex-col gap-1"><button onClick={() => openEditTransaction(tx)} className="bg-black/5 text-gray-700 hover:bg-black/10 p-1.5 rounded-lg"><Icon path={IconPaths.edit} size={14}/></button><button onClick={() => initiateDelete('transaction', tx.id, `${formatDateTR(tx.date)} - ${formatMoney(tx.amount)}`)} className="bg-red-50 text-red-500 hover:bg-red-100 p-1.5 rounded-lg"><Icon path={IconPaths.trash} size={14}/></button></div>)}
                         </div>
                       </div>
                     </div>
                   ))}
                   {transactions.filter(t => t.supplier_id === selectedSupplier.id).length === 0 && <p className="text-center text-gray-500 py-4">İşlem yok</p>}
                 </div></div>
-              </>) : (<div className="flex flex-col items-center justify-center h-full text-gray-500 py-20"><p className="text-5xl mb-4">👈</p><p>Toptancı seçin</p></div>)}
+              </>) : (<div className="flex flex-col items-center justify-center h-full text-gray-500 py-20"><p className="text-5xl mb-4"></p><p>Toptancı seçin</p></div>)}
             </div>
           </div>
         </main>
         
-        {showAddSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-black">Yeni Toptancı</h3><div className="space-y-4"><div><label className="text-sm font-medium">Ad *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Telefon</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Not</label><textarea value={supplierForm.notes} onChange={(e) => setSupplierForm({...supplierForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowAddSupplier(false)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddSupplier} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Ekle</button></div></div></div>)}
+        {showAddSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="rounded-2xl p-6 w-full max-w-md border border-white/60" style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}><h3 className="text-xl font-bold mb-4 text-black">Yeni Toptancı</h3><div className="space-y-4"><div><label className="text-sm font-medium">Ad *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div><div><label className="text-sm font-medium">Telefon</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div><div><label className="text-sm font-medium">Not</label><textarea value={supplierForm.notes} onChange={(e) => setSupplierForm({...supplierForm, notes: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowAddSupplier(false)} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">İptal</button><button onClick={handleAddSupplier} className="flex-1 bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition">Ekle</button></div></div></div>)}
         
-        {showEditSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-black">✏️ Toptancı Düzenle</h3><div className="space-y-4"><div><label className="text-sm font-medium">Ad *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Telefon</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Not</label><textarea value={supplierForm.notes} onChange={(e) => setSupplierForm({...supplierForm, notes: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowEditSupplier(null); setSupplierForm({ name: '', phone: '', notes: '' }); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleEditSupplier} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
+        {showEditSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="rounded-2xl p-6 w-full max-w-md border border-white/60" style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}><h3 className="text-xl font-bold mb-4 text-gray-900">Toptancı Düzenle</h3><div className="space-y-4"><div><label className="text-sm font-medium">Ad *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({...supplierForm, name: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div><div><label className="text-sm font-medium">Telefon</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({...supplierForm, phone: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div><div><label className="text-sm font-medium">Not</label><textarea value={supplierForm.notes} onChange={(e) => setSupplierForm({...supplierForm, notes: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowEditSupplier(null); setSupplierForm({ name: '', phone: '', notes: '' }); }} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">İptal</button><button onClick={handleEditSupplier} className="flex-1 bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition">Güncelle</button></div></div></div>)}
         
-        {showAddTransaction && selectedSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto"><div className="bg-white rounded-xl p-6 w-full max-w-md my-8"><h3 className={`text-xl font-bold mb-4 ${showAddTransaction === 'ALIM' ? 'text-red-600' : 'text-gray-900'}`}>{showAddTransaction === 'ALIM' ? '📦 Mal Alımı' : '💰 Ödeme'}</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tutar *</label><input type="number" value={transactionForm.amount} onChange={(e) => setTransactionForm({...transactionForm, amount: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div><div><label className="text-sm font-medium">Tarih *</label><input type="date" value={transactionForm.date} onChange={(e) => setTransactionForm({...transactionForm, date: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /><p className="text-sm text-gray-600 mt-1">{formatDateTR(transactionForm.date)}</p></div><div><label className="text-sm font-medium">Ödeme Biçimi</label><select value={transactionForm.payment_method} onChange={(e) => setTransactionForm({...transactionForm, payment_method: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg"><option value="nakit">💵 Nakit</option><option value="kredi_karti">💳 Kredi Kartı</option><option value="cek">📄 Çek</option><option value="senet">📃 Senet</option></select></div><div><label className="text-sm font-medium">Açıklama</label><input type="text" value={transactionForm.description} onChange={(e) => setTransactionForm({...transactionForm, description: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">📄 Fatura Ekle</label><input type="file" accept="image/*,.pdf" onChange={(e) => setTransactionForm({...transactionForm, invoice: e.target.files[0]})} className="w-full px-4 py-2 border-2 rounded-lg text-sm" />{transactionForm.invoice && <p className="text-xs text-gray-900 mt-1">✅ {transactionForm.invoice.name}</p>}{uploadingInvoice && <p className="text-xs text-black mt-1">⏳ Yükleniyor...</p>}</div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowAddTransaction(null)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddTransaction} disabled={loading || uploadingInvoice} className={`flex-1 text-white py-3 rounded-lg font-semibold ${showAddTransaction === 'ALIM' ? 'bg-red-500' : 'bg-black'}`}>Kaydet</button></div></div></div>)}
+        {showAddTransaction && selectedSupplier && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto"><div className="rounded-2xl p-6 w-full max-w-md my-8 border border-white/60" style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}><h3 className={`text-xl font-bold mb-4 ${showAddTransaction === 'ALIM' ? 'text-red-600' : 'text-gray-900'}`}>{showAddTransaction === 'ALIM' ? 'Mal Alımı' : 'Ödeme'}</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tutar *</label><input type="number" value={transactionForm.amount} onChange={(e) => setTransactionForm({...transactionForm, amount: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="0" /></div><div><label className="text-sm font-medium">Tarih *</label><input type="date" value={transactionForm.date} onChange={(e) => setTransactionForm({...transactionForm, date: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /><p className="text-sm text-gray-600 mt-1">{formatDateTR(transactionForm.date)}</p></div><div><label className="text-sm font-medium">Ödeme Biçimi</label><select value={transactionForm.payment_method} onChange={(e) => setTransactionForm({...transactionForm, payment_method: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70"><option value="nakit">Nakit</option><option value="kredi_karti">Kredi Kartı</option><option value="cek">Çek</option><option value="senet">Senet</option></select></div><div><label className="text-sm font-medium">Açıklama</label><input type="text" value={transactionForm.description} onChange={(e) => setTransactionForm({...transactionForm, description: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div><div><label className="text-sm font-medium text-gray-600">Fatura Ekle</label><input type="file" accept="image/*,.pdf" onChange={(e) => setTransactionForm({...transactionForm, invoice: e.target.files[0]})} className="w-full px-4 py-2 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none transition bg-white/70" />{transactionForm.invoice && <p className="text-xs text-emerald-600 mt-1">{transactionForm.invoice.name}</p>}{uploadingInvoice && <p className="text-xs text-gray-500 mt-1">Yükleniyor...</p>}</div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowAddTransaction(null)} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">İptal</button><button onClick={handleAddTransaction} disabled={loading || uploadingInvoice} className={`flex-1 text-white py-3 rounded-lg font-semibold ${showAddTransaction === 'ALIM' ? 'bg-red-500' : 'bg-black'}`}>Kaydet</button></div></div></div>)}
         
-        {showEditTransaction && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white rounded-xl p-6 w-full max-w-md"><h3 className="text-xl font-bold mb-4 text-black">✏️ İşlem Düzenle</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tutar</label><input type="number" value={transactionForm.amount} onChange={(e) => setTransactionForm({...transactionForm, amount: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">Ödeme Biçimi</label><select value={transactionForm.payment_method} onChange={(e) => setTransactionForm({...transactionForm, payment_method: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg"><option value="nakit">💵 Nakit</option><option value="kredi_karti">💳 Kredi Kartı</option><option value="cek">📄 Çek</option><option value="senet">📃 Senet</option></select></div><div><label className="text-sm font-medium">Açıklama</label><input type="text" value={transactionForm.description} onChange={(e) => setTransactionForm({...transactionForm, description: e.target.value})} className="w-full px-4 py-2 border-2 rounded-lg" /></div><div><label className="text-sm font-medium">📄 Yeni Fatura</label><input type="file" accept="image/*,.pdf" onChange={(e) => setTransactionForm({...transactionForm, invoice: e.target.files[0]})} className="w-full px-4 py-2 border-2 rounded-lg text-sm" />{showEditTransaction.invoice_url && !transactionForm.invoice && <p className="text-xs text-black mt-1">📄 Mevcut fatura var</p>}{transactionForm.invoice && <p className="text-xs text-gray-900 mt-1">✅ {transactionForm.invoice.name}</p>}</div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowEditTransaction(null)} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleEditTransaction} disabled={loading || uploadingInvoice} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Güncelle</button></div></div></div>)}
+        {showEditTransaction && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="rounded-2xl p-6 w-full max-w-md border border-white/60" style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}><h3 className="text-xl font-bold mb-4 text-gray-900">İşlem Düzenle</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tutar</label><input type="number" value={transactionForm.amount} onChange={(e) => setTransactionForm({...transactionForm, amount: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div><div><label className="text-sm font-medium">Ödeme Biçimi</label><select value={transactionForm.payment_method} onChange={(e) => setTransactionForm({...transactionForm, payment_method: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70"><option value="nakit">Nakit</option><option value="kredi_karti">Kredi Kartı</option><option value="cek">Çek</option><option value="senet">Senet</option></select></div><div><label className="text-sm font-medium">Açıklama</label><input type="text" value={transactionForm.description} onChange={(e) => setTransactionForm({...transactionForm, description: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div><div><label className="text-sm font-medium text-gray-600">Yeni Fatura</label><input type="file" accept="image/*,.pdf" onChange={(e) => setTransactionForm({...transactionForm, invoice: e.target.files[0]})} className="w-full px-4 py-2 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none transition bg-white/70" />{showEditTransaction.invoice_url && !transactionForm.invoice && <p className="text-xs text-gray-500 mt-1">Mevcut fatura var</p>}{transactionForm.invoice && <p className="text-xs text-emerald-600 mt-1">{transactionForm.invoice.name}</p>}</div></div><div className="flex gap-2 mt-6"><button onClick={() => setShowEditTransaction(null)} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">İptal</button><button onClick={handleEditTransaction} disabled={loading || uploadingInvoice} className="flex-1 bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition">Güncelle</button></div></div></div>)}
         
         <DeleteConfirmModal />
       </div>
@@ -1441,19 +1489,19 @@ export default function App() {
     const detailPeriod = SALARY_PERIOD.find(x => x.key === salaryDetailKey) || SALARY_PERIOD[0];
 
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #f5f5f7 0%, #e8e8ec 50%, #dddde3 100%)' }}>
         <LoadingOverlay />
-        <header className="bg-white shadow border-b border-gray-200"><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => { setScreen('menu'); setSelectedEmployee(null); }} className="text-2xl text-black">←</button><h1 className="text-xl font-bold text-gray-800">🧾 Maaş Takibi</h1><span className="bg-black text-white text-xs px-2 py-1 rounded-full">Sadece Admin</span></div><button onClick={handleLogout} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">Çıkış</button></div></header>
+        <header className="sticky top-0 z-30 border-b border-white/50" style={{ background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)' }}><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => { setScreen('menu'); setSelectedEmployee(null); }} className="text-black p-1 -ml-1 rounded-lg hover:bg-black/5"><Icon path={IconPaths.back} size={22} /></button><h1 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Icon path={IconPaths.receipt} size={20} /> Maaş Takibi</h1><span className="bg-black text-white text-xs px-2 py-1 rounded-full">Sadece Admin</span></div><button onClick={handleLogout} className="inline-flex items-center gap-1.5 bg-black/5 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-black/10"><Icon path={IconPaths.logout} size={15} /> Çıkış</button></div></header>
 
         <main className="max-w-7xl mx-auto px-4 py-6">
           <div className="mb-2 text-sm text-gray-500">{SALARY_PERIOD[0].label} – {SALARY_PERIOD[11].label} (12 ay)</div>
 
           {/* Özet kartları */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-            <div className="bg-white rounded-xl p-4 shadow"><p className="text-sm text-gray-500">Personel</p><p className="text-2xl font-bold text-gray-900">{employees.length}</p></div>
-            <div className="bg-white rounded-xl p-4 shadow"><p className="text-sm text-gray-500">Toplam Maaş Yükü (12 ay)</p><p className="text-2xl font-bold text-gray-900">{formatMoney(totalDue)}</p></div>
-            <div className="bg-white rounded-xl p-4 shadow"><p className="text-sm text-gray-500">Ödenen</p><p className="text-2xl font-bold text-gray-900">{formatMoney(totalPaid)}</p></div>
-            <div className="bg-white rounded-xl p-4 shadow border-l-4 border-red-600"><p className="text-sm text-gray-500">Vadesi Gelen Kalan</p><p className="text-2xl font-bold text-red-600">{formatMoney(totalDueNow)}</p></div>
+            <div className="rounded-2xl p-4 border border-white/50 shadow"><p className="text-sm text-gray-500">Personel</p><p className="text-2xl font-bold text-gray-900">{employees.length}</p></div>
+            <div className="rounded-2xl p-4 border border-white/50 shadow"><p className="text-sm text-gray-500">Toplam Maaş Yükü (12 ay)</p><p className="text-2xl font-bold text-gray-900">{formatMoney(totalDue)}</p></div>
+            <div className="rounded-2xl p-4 border border-white/50 shadow"><p className="text-sm text-gray-500">Ödenen</p><p className="text-2xl font-bold text-gray-900">{formatMoney(totalPaid)}</p></div>
+            <div className="rounded-2xl p-4 border border-white/50 shadow border-l-4 border-red-600"><p className="text-sm text-gray-500">Vadesi Gelen Kalan</p><p className="text-2xl font-bold text-red-600">{formatMoney(totalDueNow)}</p></div>
           </div>
 
           {/* Kontroller */}
@@ -1470,7 +1518,7 @@ export default function App() {
             <select value={salarySortKey} onChange={(e) => setSalarySortKey(e.target.value)} className="px-3 py-2 border-2 rounded-lg text-sm">
               {SALARY_PERIOD.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
             </select>
-            <button onClick={() => { setShowAddEmployee(true); setError(''); }} className="ml-auto bg-black text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-800">+ Personel Ekle</button>
+            <button onClick={() => { setShowAddEmployee(true); setError(''); }} className="ml-auto bg-black text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-gray-800 inline-flex items-center gap-1.5"><Icon path={IconPaths.plus} size={15}/> Personel Ekle</button>
           </div>
 
           {/* Maaş tablosu — 12 ay, yatay kaydırılır */}
@@ -1498,11 +1546,11 @@ export default function App() {
                       return (
                         <td key={p.key} className={`p-3 text-right whitespace-nowrap ${dueNow ? '' : 'bg-gray-50/40'}`}>
                           {due === 0 ? <span className="text-gray-300">—</span> : rem === 0 ? (
-                            <span className="text-gray-900 font-semibold">✓</span>
+                            <span className="text-emerald-600"><Icon path={IconPaths.check} size={16}/></span>
                           ) : (
                             <span className="inline-flex items-center gap-1 justify-end">
                               <span className={`font-semibold ${dueNow ? 'text-red-600' : 'text-gray-400'}`}>{formatMoney(rem)}</span>
-                              <button onClick={(ev) => { ev.stopPropagation(); setEditSalaryModal({ employee: e, period: p }); setEditSalaryValue(String(due)); setError(''); }} className="text-gray-400 hover:text-black" title="Maaşı düzelt">✏️</button>
+                              <button onClick={(ev) => { ev.stopPropagation(); setEditSalaryModal({ employee: e, period: p }); setEditSalaryValue(String(due)); setError(''); }} className="text-gray-400 hover:text-black" title="Maaşı düzelt"><Icon path={IconPaths.edit} size={15}/></button>
                             </span>
                           )}
                         </td>
@@ -1514,7 +1562,7 @@ export default function App() {
               </tbody>
             </table>
           </div>
-          <p className="text-xs text-gray-400 mt-2">↔ Tabloyu yana kaydırarak 12 ayın tümünü görebilirsiniz.</p>
+          <p className="text-xs text-gray-400 mt-2"> Tabloyu yana kaydırarak 12 ayın tümünü görebilirsiniz.</p>
 
           {/* Personel detay paneli */}
           {emp && (() => {
@@ -1566,7 +1614,7 @@ export default function App() {
                     ) : empPayments.map(p => (
                       <div key={p.id} className="flex justify-between items-center py-2 border-b text-sm">
                         <span className="text-gray-600">{p.note || 'Ödeme'}<span className="text-gray-400 text-xs block">{formatDateTimeTR(p.created_at)}{p.fullName ? ` · ${p.fullName}` : ''}{p.updated_at ? ' · (düzeltildi)' : ''}</span></span>
-                        <span className="flex items-center gap-2"><span className="font-semibold text-gray-900">{formatMoney(p.amount)}</span>{p.expense_id ? (<span className="text-[10px] text-gray-400" title="Bu ödeme gün sonu giderinden geldi. Değişiklik için ilgili gün sonu raporunu düzenleyin.">🍽️ gün sonu</span>) : (<><button onClick={() => { setEditPaymentModal(p); setEditPaymentForm({ amount: String(p.amount), note: p.note || '' }); setError(''); }} className="text-gray-400 hover:text-black" title="Düzelt">✏️</button><button onClick={() => handleDeleteSalaryPayment(p.id)} className="text-red-600" title="Sil">✕</button></>)}</span>
+                        <span className="flex items-center gap-2"><span className="font-semibold text-gray-900">{formatMoney(p.amount)}</span>{p.expense_id ? (<span className="text-[10px] text-gray-400" title="Bu ödeme gün sonu giderinden geldi. Değişiklik için ilgili gün sonu raporunu düzenleyin.">gün sonu</span>) : (<><button onClick={() => { setEditPaymentModal(p); setEditPaymentForm({ amount: String(p.amount), note: p.note || '' }); setError(''); }} className="text-gray-400 hover:text-black" title="Düzelt"><Icon path={IconPaths.edit} size={15}/></button><button onClick={() => handleDeleteSalaryPayment(p.id)} className="text-red-500 hover:text-red-700" title="Sil"><Icon path={IconPaths.close} size={15}/></button></>)}</span>
                       </div>
                     ))}
                   </>
@@ -1579,15 +1627,15 @@ export default function App() {
         {/* Personel ekleme modalı */}
         {showAddEmployee && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-md">
-              <h3 className="text-xl font-bold mb-4 text-black">🧾 Yeni Personel</h3>
+            <div className="rounded-2xl p-6 w-full max-w-md border border-white/60" style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
+              <h3 className="text-xl font-bold mb-4 text-gray-900">Yeni Personel</h3>
               <div className="space-y-4">
-                <div><label className="text-sm font-medium">Ad Soyad *</label><input type="text" value={employeeForm.name} onChange={(e) => setEmployeeForm({ ...employeeForm, name: e.target.value })} className="w-full px-4 py-2 border-2 rounded-lg" /></div>
-                <div><label className="text-sm font-medium">Aylık Maaş (₺) *</label><input type="number" value={employeeForm.salary} onChange={(e) => setEmployeeForm({ ...employeeForm, salary: e.target.value })} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="0" /></div>
-                <div><label className="text-sm font-medium">Başlangıç ayı</label><select value={employeeForm.startKey} onChange={(e) => setEmployeeForm({ ...employeeForm, startKey: e.target.value })} className="w-full px-4 py-2 border-2 rounded-lg">{SALARY_PERIOD.map(p => <option key={p.key} value={p.key}>{p.label}'den itibaren</option>)}</select></div>
+                <div><label className="text-sm font-medium">Ad Soyad *</label><input type="text" value={employeeForm.name} onChange={(e) => setEmployeeForm({ ...employeeForm, name: e.target.value })} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div>
+                <div><label className="text-sm font-medium">Aylık Maaş (₺) *</label><input type="number" value={employeeForm.salary} onChange={(e) => setEmployeeForm({ ...employeeForm, salary: e.target.value })} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="0" /></div>
+                <div><label className="text-sm font-medium">Başlangıç ayı</label><select value={employeeForm.startKey} onChange={(e) => setEmployeeForm({ ...employeeForm, startKey: e.target.value })} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70">{SALARY_PERIOD.map(p => <option key={p.key} value={p.key}>{p.label}'den itibaren</option>)}</select></div>
               </div>
               {error && <div className="bg-red-100 text-red-700 px-3 py-2 rounded-lg text-sm mt-3">{error}</div>}
-              <div className="flex gap-2 mt-6"><button onClick={() => { setShowAddEmployee(false); setError(''); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleAddEmployee} disabled={loading} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Ekle</button></div>
+              <div className="flex gap-2 mt-6"><button onClick={() => { setShowAddEmployee(false); setError(''); }} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">İptal</button><button onClick={handleAddEmployee} disabled={loading} className="flex-1 bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition">Ekle</button></div>
             </div>
           </div>
         )}
@@ -1595,12 +1643,12 @@ export default function App() {
         {/* Maaş düzeltme modalı */}
         {editSalaryModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-md">
-              <h3 className="text-xl font-bold mb-1 text-black">✏️ Maaş Düzelt</h3>
+            <div className="rounded-2xl p-6 w-full max-w-md border border-white/60" style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
+              <h3 className="text-xl font-bold mb-1 text-gray-900">Maaş Düzelt</h3>
               <p className="text-sm text-gray-500 mb-4">{editSalaryModal.employee.name} · {editSalaryModal.period.label} ve sonraki aylara uygulanır</p>
-              <input type="number" value={editSalaryValue} onChange={(e) => setEditSalaryValue(e.target.value)} className="w-full px-4 py-2 border-2 rounded-lg" />
+              <input type="number" value={editSalaryValue} onChange={(e) => setEditSalaryValue(e.target.value)} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" />
               {error && <div className="bg-red-100 text-red-700 px-3 py-2 rounded-lg text-sm mt-3">{error}</div>}
-              <div className="flex gap-2 mt-6"><button onClick={() => { setEditSalaryModal(null); setError(''); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleEditSalary} disabled={loading} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Güncelle</button></div>
+              <div className="flex gap-2 mt-6"><button onClick={() => { setEditSalaryModal(null); setError(''); }} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">İptal</button><button onClick={handleEditSalary} disabled={loading} className="flex-1 bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition">Güncelle</button></div>
             </div>
           </div>
         )}
@@ -1608,15 +1656,15 @@ export default function App() {
         {/* Ödeme düzeltme modalı */}
         {editPaymentModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-md">
-              <h3 className="text-xl font-bold mb-1 text-black">✏️ Ödemeyi Düzelt</h3>
+            <div className="rounded-2xl p-6 w-full max-w-md border border-white/60" style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
+              <h3 className="text-xl font-bold mb-1 text-gray-900">Ödemeyi Düzelt</h3>
               <p className="text-sm text-gray-500 mb-4">Girildiği tarih: {formatDateTimeTR(editPaymentModal.created_at)}</p>
               <div className="space-y-3">
-                <div><label className="text-sm font-medium">Tutar (₺)</label><input type="number" value={editPaymentForm.amount} onChange={(e) => setEditPaymentForm({ ...editPaymentForm, amount: e.target.value })} className="w-full px-4 py-2 border-2 rounded-lg" /></div>
-                <div><label className="text-sm font-medium">Açıklama</label><input type="text" value={editPaymentForm.note} onChange={(e) => setEditPaymentForm({ ...editPaymentForm, note: e.target.value })} className="w-full px-4 py-2 border-2 rounded-lg" placeholder="Açıklama (ops.)" /></div>
+                <div><label className="text-sm font-medium">Tutar (₺)</label><input type="number" value={editPaymentForm.amount} onChange={(e) => setEditPaymentForm({ ...editPaymentForm, amount: e.target.value })} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div>
+                <div><label className="text-sm font-medium">Açıklama</label><input type="text" value={editPaymentForm.note} onChange={(e) => setEditPaymentForm({ ...editPaymentForm, note: e.target.value })} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="Açıklama (ops.)" /></div>
               </div>
               {error && <div className="bg-red-100 text-red-700 px-3 py-2 rounded-lg text-sm mt-3">{error}</div>}
-              <div className="flex gap-2 mt-6"><button onClick={() => { setEditPaymentModal(null); setError(''); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleUpdateSalaryPayment} disabled={loading} className="flex-1 bg-black text-white py-3 rounded-lg font-semibold">Kaydet</button></div>
+              <div className="flex gap-2 mt-6"><button onClick={() => { setEditPaymentModal(null); setError(''); }} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">İptal</button><button onClick={handleUpdateSalaryPayment} disabled={loading} className="flex-1 bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition">Kaydet</button></div>
             </div>
           </div>
         )}
@@ -1632,7 +1680,7 @@ export default function App() {
                 {SALARY_PERIOD.map(p => <button key={p.key} onClick={() => handleTerminateEmployee(p.key)} className="px-3 py-1.5 rounded-lg text-sm border-2 border-gray-200 hover:border-red-600 hover:text-red-600 whitespace-nowrap">{p.label}</button>)}
               </div>
               {error && <div className="bg-red-100 text-red-700 px-3 py-2 rounded-lg text-sm mb-3">{error}</div>}
-              <div className="flex gap-2 mt-2"><button onClick={() => { setTerminateModal(null); setError(''); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold">İptal</button><button onClick={handleDeleteEmployee} disabled={loading} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Tamamen Sil</button></div>
+              <div className="flex gap-2 mt-2"><button onClick={() => { setTerminateModal(null); setError(''); }} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">İptal</button><button onClick={handleDeleteEmployee} disabled={loading} className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold">Tamamen Sil</button></div>
             </div>
           </div>
         )}
