@@ -109,6 +109,7 @@ export default function App() {
   const [editSalaryModal, setEditSalaryModal] = useState(null); // { employee, period }
   const [editSalaryValue, setEditSalaryValue] = useState('');
   const [terminateModal, setTerminateModal] = useState(null);
+  const [editingName, setEditingName] = useState(null); // { id, value } - personel adı düzenleme
 
   function getTurkeyDate() {
     const now = new Date();
@@ -818,6 +819,25 @@ export default function App() {
       setError('');
     } catch (e) {
       setError('İşlem başarısız: ' + e.message);
+    }
+    setLoading(false);
+  };
+
+  // Personel adını güncelle
+  const handleRenameEmployee = async () => {
+    if (!editingName) return;
+    const newName = (editingName.value || '').trim();
+    if (!newName) { setEditingName(null); return; }
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('employees').update({ name: newName }).eq('id', editingName.id);
+      if (error) throw error;
+      await loadEmployees();
+      if (selectedEmployee && selectedEmployee.id === editingName.id) setSelectedEmployee({ ...selectedEmployee, name: newName });
+      setEditingName(null);
+      setError('');
+    } catch (e) {
+      setError('İsim güncellenemedi: ' + e.message);
     }
     setLoading(false);
   };
@@ -1638,7 +1658,15 @@ export default function App() {
                   <div className="flex items-center gap-3">
                     <span className="w-10 h-10 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-sm font-semibold">{getEmpInitials(emp.name)}</span>
                     <div>
-                      <p className="font-bold text-gray-800">{emp.name}</p>
+                      {editingName && editingName.id === emp.id ? (
+                        <div className="flex items-center gap-1.5">
+                          <input autoFocus value={editingName.value} onChange={(e) => setEditingName({ ...editingName, value: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') handleRenameEmployee(); if (e.key === 'Escape') setEditingName(null); }} className="font-bold text-gray-900 border border-gray-300 rounded-lg px-2 py-1 bg-white/80 focus:border-black focus:outline-none" />
+                          <button onClick={handleRenameEmployee} className="text-emerald-600 hover:text-emerald-700" title="Kaydet"><Icon path={IconPaths.check} size={17}/></button>
+                          <button onClick={() => setEditingName(null)} className="text-gray-400 hover:text-gray-600" title="İptal"><Icon path={IconPaths.close} size={17}/></button>
+                        </div>
+                      ) : (
+                        <p className="font-bold text-gray-800 flex items-center gap-1.5">{emp.name}<button onClick={() => setEditingName({ id: emp.id, value: emp.name })} className="text-gray-400 hover:text-black" title="İsmi düzelt"><Icon path={IconPaths.edit} size={13}/></button></p>
+                      )}
                       <p className="text-xs text-gray-500">Aylık baz maaş: {formatMoney(emp.base_salary)}</p>
                       <div className="flex items-center gap-1.5 mt-1">
                         <span className="text-xs text-gray-500">Maaş günü:</span>
