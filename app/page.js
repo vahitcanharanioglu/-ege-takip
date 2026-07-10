@@ -112,9 +112,11 @@ export default function App() {
   const [editingName, setEditingName] = useState(null); // { id, value } - personel adı düzenleme
 
   function getTurkeyDate() {
-    const now = new Date();
-    const turkeyTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Istanbul' }));
-    return turkeyTime.toISOString().split('T')[0];
+    // Türkiye yerel tarihini YYYY-MM-DD olarak, UTC kaymasına takılmadan üret
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(new Date());
+    return parts; // en-CA formatı zaten YYYY-MM-DD verir
   }
 
   function getTurkeyDateTime() {
@@ -1449,8 +1451,8 @@ export default function App() {
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                <div className="bg-gray-50 p-3 rounded-lg border-2 border-gray-300"><p className="text-emerald-600 font-semibold text-xs flex items-center gap-1"><Icon path={IconPaths.card} size={13}/> Kredi Kartı</p><p className="text-lg font-bold">{formatMoney(currentReport.credit_card)}</p></div>
-                <div className="bg-gray-50 p-3 rounded-lg border-2 border-gray-300"><p className="text-emerald-600 font-semibold text-xs flex items-center gap-1"><Icon path={IconPaths.cash} size={13}/> Nakit</p><p className="text-lg font-bold">{formatMoney(currentReport.cash)}</p></div>
+                <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-200"><p className="text-emerald-600 font-semibold text-xs flex items-center gap-1"><Icon path={IconPaths.card} size={13}/> Kredi Kartı</p><p className="text-lg font-bold">{formatMoney(currentReport.credit_card)}</p></div>
+                <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-200"><p className="text-emerald-600 font-semibold text-xs flex items-center gap-1"><Icon path={IconPaths.cash} size={13}/> Nakit</p><p className="text-lg font-bold">{formatMoney(currentReport.cash)}</p></div>
                 <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-200"><p className="text-emerald-600 font-semibold text-xs flex items-center gap-1"><Icon path={IconPaths.meal} size={13}/> Yemek Kartı</p><p className="text-lg font-bold">{formatMoney(currentReport.meal_cards)}</p></div>
                 <div className="bg-gray-50 p-3 rounded-lg border border-gray-200"><p className="text-gray-600 font-semibold text-xs flex items-center gap-1"><Icon path={IconPaths.wallet} size={13}/> Eldeki Nakit</p><p className="text-lg font-bold">{formatMoney(currentReport.actual_cash)}</p></div>
               </div>
