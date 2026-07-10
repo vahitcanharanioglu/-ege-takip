@@ -507,42 +507,49 @@ export default function App() {
   const getActiveEmployees = () => employees.filter(e => !e.end_key || e.end_key >= currentMonthKey);
   const getEmployeeName = (id) => employees.find(e => e.id === id)?.name || '';
 
-  // FIFO: ödeme en eski tamamlanmamış aydan düşer.
-  // Vadesi gelmiş (geçmiş + bu ay) aylar sırayla doldurulur; hepsi tamamsa kalan bu aya "fazla" olarak yazılır.
-  const allocateSalaryFIFO = (empId, amount, extraPaid = {}) => {
-    const emp = employees.find(e => e.id === empId);
+
+  // Kaydedilen giderlerden maaş ödemeleri oluştur (expense_id ile bağlı)
+  // FIFO dağıtımı — payments listesi DIŞARIDAN verilir (taze DB verisi).
+  // Böylece React state gecikmesine bağlı yanlış kalan hesabı önlenir.
+  const allocateSalaryFIFOWith = (emp, amount, paymentsForEmp, extraPaid = {}) => {
     if (!emp || !(amount > 0)) return [];
+    const remainingOf = (p) => {
+      const due = getSalaryDue(emp, p);
+      const paid = paymentsForEmp
+        .filter(x => x.year === p.year && x.month === p.month)
+        .reduce((s, x) => s + Number(x.amount), 0);
+      const extra = extraPaid[`${emp.id}|${p.key}`] || 0;
+      return Math.max(0, due - paid - extra);
+    };
     let left = amount;
     const parts = [];
-    // 1. TUR: Vadesi gelmiş aylardaki borçları en eskiden başlayarak kapat
+    // 1. TUR: vadesi gelmiş aylardaki borçlar (en eskiden)
     for (const p of SALARY_PERIOD) {
       if (left <= 0.001) break;
-      if (!isPeriodDue(p, emp)) continue; // vadesi gelmemişse bu turda atla
-      const extra = extraPaid[`${empId}|${p.key}`] || 0;
-      const rem = Math.max(0, getSalaryRemaining(emp, p) - extra);
+      if (!isPeriodDue(p, emp)) continue;
+      const rem = remainingOf(p);
       if (rem > 0) {
         const take = Math.min(rem, left);
         parts.push({ year: p.year, month: p.month, amount: Math.round(take * 1000) / 1000 });
-        extraPaid[`${empId}|${p.key}`] = extra + take;
+        extraPaid[`${emp.id}|${p.key}`] = (extraPaid[`${emp.id}|${p.key}`] || 0) + take;
         left -= take;
       }
     }
-    // 2. TUR (AVANS): Hâlâ para varsa, vadesi gelmemiş aylara sırayla avans olarak yaz
+    // 2. TUR (AVANS): vadesi gelmemiş aylara sırayla
     if (left > 0.001) {
       for (const p of SALARY_PERIOD) {
         if (left <= 0.001) break;
-        if (isPeriodDue(p, emp)) continue; // vadesi gelmişler 1. turda ele alındı
-        const extra = extraPaid[`${empId}|${p.key}`] || 0;
-        const rem = Math.max(0, getSalaryRemaining(emp, p) - extra);
+        if (isPeriodDue(p, emp)) continue;
+        const rem = remainingOf(p);
         if (rem > 0) {
           const take = Math.min(rem, left);
           parts.push({ year: p.year, month: p.month, amount: Math.round(take * 1000) / 1000 });
-          extraPaid[`${empId}|${p.key}`] = extra + take;
+          extraPaid[`${emp.id}|${p.key}`] = (extraPaid[`${emp.id}|${p.key}`] || 0) + take;
           left -= take;
         }
       }
     }
-    // 3. Hâlâ artan varsa (tüm aylar dolu) bu aya "fazla" olarak ekle
+    // 3. Tüm aylar doluysa kalanı bu aya "fazla" ekle
     if (left > 0.001) {
       const cur = SALARY_PERIOD.find(p => p.key === currentMonthKey) || SALARY_PERIOD[SALARY_PERIOD.length - 1];
       const ex = parts.find(x => x.year === cur.year && x.month === cur.month);
@@ -552,16 +559,24 @@ export default function App() {
     return parts;
   };
 
-  // Kaydedilen giderlerden maaş ödemeleri oluştur (expense_id ile bağlı)
   const createSalaryPaymentsForExpenses = async (exps) => {
+    const withEmp = (exps || []).filter(e => e.employee_id);
+    if (withEmp.length === 0) return;
+    // İlgili personellerin GÜNCEL ödemelerini DB'den taze çek (state gecikmesini önle)
+    const empIds = [...new Set(withEmp.map(e => e.employee_id))];
+    const { data: freshPayments, error: fpErr } = await supabase
+      .from('salary_payments').select('employee_id, year, month, amount').in('employee_id', empIds);
+    if (fpErr) throw fpErr;
+    const byEmp = {};
+    (freshPayments || []).forEach(p => { (byEmp[p.employee_id] = byEmp[p.employee_id] || []).push(p); });
+
     const rows = [];
-    const extraPaid = {}; // aynı kayıtta aynı personele birden çok gider girilirse birikimli düş
-    for (const exp of (exps || [])) {
-      if (!exp.employee_id) continue;
-      const parts = allocateSalaryFIFO(exp.employee_id, Number(exp.amount), extraPaid);
+    const extraPaid = {}; // aynı batch içinde birikimli düşüş
+    for (const exp of withEmp) {
+      const emp = employees.find(e => e.id === exp.employee_id);
+      if (!emp) continue;
+      const parts = allocateSalaryFIFOWith(emp, Number(exp.amount), byEmp[exp.employee_id] || [], extraPaid);
       for (const part of parts) {
-        const k = `${exp.employee_id}|${periodKey(part.year, part.month)}`;
-        extraPaid[k] = (extraPaid[k] || 0) + part.amount;
         rows.push({
           employee_id: exp.employee_id,
           year: part.year,
