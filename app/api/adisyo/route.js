@@ -73,7 +73,8 @@ export async function GET(request) {
 
     const totals = {};
     for (const order of orders) {
-      const ins = order.insertDate ? Date.parse(order.insertDate + 'Z') : null;
+      // Adisyo sipariş tarihleri Türkiye saatinde gelir (UTC değil!)
+      const ins = order.insertDate ? Date.parse(order.insertDate + '+03:00') : null;
       if (ins && ins > endUtcMs) continue;
       const pays = Array.isArray(order.payments) ? order.payments : [];
       for (const p of pays) {
