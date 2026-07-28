@@ -10,6 +10,7 @@
 // Cevap: { ok, payments: [{ paymentTypeId, name, amount, isMealCard, isDebit }], totalCount, raw? }
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // saniye — çok sayfalı günlerde beklemeler için
 
 const ADISYO_BASE = 'https://ext.adisyo.com/api/External/v2';
 
@@ -62,28 +63,48 @@ export async function GET(request) {
     let totalCount = 0;
     let safety = 0; // sonsuz döngü koruması
 
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    // Bir sayfayı çeker; Adisyo limit hatası (601) verirse bekleyip tekrar dener.
+    async function fetchPageWithRetry(pageNo) {
+      const url = `${ADISYO_BASE}/CompletedOrders?page=${pageNo}&startDate=${encodeURIComponent(startStr)}&includeCancelled=false`;
+      let attempt = 0;
+      while (attempt < 5) {
+        attempt++;
+        const res = await fetch(url, { headers, cache: 'no-store' });
+        // HTTP başarılıysa gövdeyi oku
+        let data = null;
+        try { data = await res.json(); } catch { data = null; }
+
+        // Adisyo limit aşımı: status 601 (HTTP 400 gövdesinde de gelebiliyor)
+        const isRateLimited = (data && data.status === 601) || res.status === 429;
+        if (isRateLimited) {
+          // artan bekleme: 2sn, 4sn, 6sn, 8sn
+          await sleep(2000 * attempt);
+          continue;
+        }
+
+        if (!res.ok) {
+          const text = data ? JSON.stringify(data).slice(0, 200) : '';
+          throw new Error(`Adisyo isteği başarısız (HTTP ${res.status}). ${text}`);
+        }
+        if (data && data.status && data.status !== 100) {
+          throw new Error(`Adisyo: ${data.message || 'bilinmeyen hata'}`);
+        }
+        return data;
+      }
+      // 5 denemeye rağmen limit sürüyorsa
+      throw new Error('Adisyo istek limiti aşıldı. Lütfen birkaç dakika sonra tekrar deneyin.');
+    }
+
     while (safety < 60) {
       safety++;
-      const url = `${ADISYO_BASE}/CompletedOrders?page=${page}&startDate=${encodeURIComponent(startStr)}&includeCancelled=false`;
-      const res = await fetch(url, { headers, cache: 'no-store' });
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        return Response.json(
-          { ok: false, error: `Adisyo isteği başarısız (HTTP ${res.status}). ${text.slice(0, 200)}` },
-          { status: 502 }
-        );
-      }
-      const data = await res.json();
-      if (data.status && data.status !== 100) {
-        return Response.json({ ok: false, error: `Adisyo: ${data.message || 'bilinmeyen hata'}` }, { status: 502 });
-      }
+      const data = await fetchPageWithRetry(page);
 
       const orders = Array.isArray(data.orders) ? data.orders : [];
       totalCount = data.totalCount || orders.length;
 
       for (const order of orders) {
-        // Siparişin kaydı bizim seçtiğimiz TR gününün içinde mi? (üst sınır filtre)
-        // startDate ile alt sınırı Adisyo uyguluyor; üst sınırı biz güvenceye alıyoruz.
         const ins = order.insertDate ? new Date(order.insertDate + 'Z') : null;
         if (ins && ins > endUtc) continue;
 
@@ -105,6 +126,8 @@ export async function GET(request) {
       const pageCount = data.pageCount || 1;
       if (page >= pageCount) break;
       page++;
+      // Sonraki sayfadan önce kısa bekleme — limite takılmayı önler
+      await sleep(1200);
     }
 
     const payments = Array.from(totals.values())
