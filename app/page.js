@@ -1091,7 +1091,7 @@ export default function App() {
       }
 
       if (reportData) {
-        setDailyReports([{ ...reportData, fullName: reportData.users?.full_name, expenses }, ...dailyReports]);
+        setDailyReports([{ ...reportData, fullName: reportData.users?.full_name, expenses, daily_report_payments: adisyoPayments.map(p => ({ ...p })) }, ...dailyReports]);
       }
     } catch (e) {
       console.error('Add report error:', e);
@@ -1149,6 +1149,7 @@ export default function App() {
         ...r, credit_card: parseFloat(reportForm.credit_card) || 0, cash: parseFloat(reportForm.cash) || 0,
         meal_cards: parseFloat(reportForm.meal_cards) || 0, actual_cash: parseFloat(reportForm.actual_cash) || 0,
         notes: reportForm.notes, expenses: newExpenses,
+        daily_report_payments: adisyoPayments.map(p => ({ ...p })),
         updated_by_name: user.full_name, updated_at: new Date().toISOString()
       } : r));
     } catch (e) {

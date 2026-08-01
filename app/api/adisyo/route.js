@@ -13,12 +13,12 @@ export const maxDuration = 30;
 const ADISYO_BASE = 'https://ext.adisyo.com/api/External/v2';
 
 function trDayToUtcRange(dateStr) {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const startUtc = new Date(Date.UTC(y, m - 1, d, 0, 0, 0) - 3 * 3600 * 1000);
-  const endUtc = new Date(Date.UTC(y, m - 1, d, 23, 59, 59) - 3 * 3600 * 1000);
-  const p = (n) => String(n).padStart(2, '0');
-  const fmt = (dt) => `${dt.getUTCFullYear()}-${p(dt.getUTCMonth() + 1)}-${p(dt.getUTCDate())} ${p(dt.getUTCHours())}:${p(dt.getUTCMinutes())}:${p(dt.getUTCSeconds())}`;
-  return { startStr: fmt(startUtc), endUtcMs: endUtc.getTime() };
+  // Adisyo tarihleri Türkiye saatinde yorumluyor (UTC'ye çevirmiyoruz!).
+  // startDate'i UTC'ye kaydırmak, bir önceki günün akşam saatlerini de kapsıyordu.
+  const startStr = `${dateStr} 00:00:00`;
+  // Günün üst sınırı: TR 23:59:59
+  const endUtcMs = Date.parse(`${dateStr}T23:59:59+03:00`);
+  return { startStr, endUtcMs };
 }
 
 export async function GET(request) {
