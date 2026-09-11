@@ -755,34 +755,52 @@ export default function App() {
   const runEmployeeScan = async () => {
     setScanModal({ rows: [], loading: true, applying: false });
     try {
-      const { data: exps, error } = await supabase
-        .from('expenses')
-        .select('id, description, amount, employee_id, is_external, daily_report_id');
-      if (error) throw error;
-
-      // Rapor tarihlerini eşlemek için
-      const repMap = {};
-      dailyReports.forEach(r => { repMap[r.id] = r.date; });
-
       // Tarama aralığı: Mayıs–Eylül 2026 (daha eski aylar düzeltilmeyecek)
       const SCAN_FROM = '2026-05-01', SCAN_TO = '2026-09-30';
+
+      // 1) Aralıktaki raporları DOĞRUDAN veritabanından çek (ekran state'ine güvenme)
+      const { data: reps, error: repErr } = await supabase
+        .from('daily_reports')
+        .select('id, date')
+        .gte('date', SCAN_FROM)
+        .lte('date', SCAN_TO);
+      if (repErr) throw repErr;
+      const repMap = {};
+      (reps || []).forEach(r => { repMap[r.id] = r.date; });
+      const repIds = Object.keys(repMap);
+      if (repIds.length === 0) {
+        setScanModal({ rows: [], loading: false, applying: false, showUnmatched: false });
+        return;
+      }
+
+      // 2) Bu raporlara bağlı, personele ATANMAMIŞ giderleri çek (100'lük parçalar halinde)
+      const allExps = [];
+      for (let i = 0; i < repIds.length; i += 100) {
+        const chunk = repIds.slice(i, i + 100);
+        const { data: exps, error } = await supabase
+          .from('expenses')
+          .select('id, description, amount, employee_id, is_external, daily_report_id')
+          .in('daily_report_id', chunk)
+          .is('employee_id', null);
+        if (error) throw error;
+        if (exps) allExps.push(...exps);
+      }
+
       const rows = [];
-      for (const ex of (exps || [])) {
-        if (ex.employee_id) continue;              // zaten atanmış
+      for (const ex of allExps) {
         if (isMesaiText(ex.description)) continue;  // mesai maaşa sayılmaz
         const d = repMap[ex.daily_report_id] || '';
-        if (!d || d < SCAN_FROM || d > SCAN_TO) continue; // aralık dışı
         const empId = detectEmployeeFromText(ex.description);
         rows.push({
           id: ex.id,
           description: ex.description,
           amount: Number(ex.amount) || 0,
           is_external: !!ex.is_external,
-          date: repMap[ex.daily_report_id] || '',
+          date: d,
           employee_id: empId || '',
           employee_name: empId ? getEmployeeName(empId) : '',
-          matched: !!empId,          // algoritma buldu mu
-          selected: !!empId,          // bulunanlar varsayılan seçili
+          matched: !!empId,
+          selected: !!empId,
         });
       }
       rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
