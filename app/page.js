@@ -661,12 +661,18 @@ export default function App() {
     return parts;
   };
 
-  const createSalaryPaymentsForExpenses = async (exps) => {
+  const createSalaryPaymentsForExpenses = async (exps, reportDate) => {
     // Mesai giderleri maaş borcundan düşülmez (o günkü ek çalışma karşılığı).
     // Havale (dışarıdan gelen) ise personele ödenmiş sayılır — dahil edilir.
     const withEmp = (exps || []).filter(e => e.employee_id && !isMesaiText(e.description));
     if (withEmp.length === 0) return;
     // İlgili personellerin GÜNCEL ödemelerini DB'den taze çek (state gecikmesini önle)
+    // YÖVMİYELİ personel: ödeme, parayı aldığı GÜNÜN AYINA yazılır.
+    // MAAŞLI personel: FIFO — en eski açık borçtan düşülür (geçmiş ay borcu kapanabilir).
+    const rd = reportDate || getTurkeyDate();
+    const [rYear, rMonth] = rd.split('-').map(Number);
+
+    // Maaşlılar için güncel ödemeleri DB'den taze çek (FIFO doğru hesaplansın)
     const empIds = [...new Set(withEmp.map(e => e.employee_id))];
     const { data: freshPayments, error: fpErr } = await supabase
       .from('salary_payments').select('employee_id, year, month, amount').in('employee_id', empIds);
@@ -678,34 +684,25 @@ export default function App() {
     const extraPaid = {}; // aynı batch içinde birikimli düşüş
     for (const exp of withEmp) {
       const emp = employees.find(e => e.id === exp.employee_id);
-      if (!emp) {
-        // Personel listede yoksa ödemeyi yine de kaydet (cari aya) — aksi halde
-        // gider var ama maaş ödemesi yok durumu oluşur ve toplamlar tutmaz.
-        const cur = SALARY_PERIOD.find(p => p.key === currentMonthKey) || SALARY_PERIOD[0];
-        const amt = Math.round((Number(exp.amount) || 0) * 100) / 100;
-        if (amt > 0) {
-          rows.push({
-            employee_id: exp.employee_id,
-            year: cur.year,
-            month: cur.month,
-            amount: amt,
-            note: `${exp.is_external ? 'Dışarıdan (havale)' : 'Gün sonu gideri'}${exp.description ? ' - ' + exp.description : ''}`,
-            created_by: user.id,
-            expense_id: exp.id,
-          });
-        }
+      const amt = Math.round((Number(exp.amount) || 0) * 100) / 100;
+      if (amt <= 0) continue;
+      const note = `${exp.is_external ? 'Dışarıdan (havale)' : 'Gün sonu gideri'}${exp.description ? ' - ' + exp.description : ''}`;
+
+      // Yövmiyeli (veya personel kaydı bulunamadıysa): gün sonu ayına yaz
+      if (!emp || emp.is_daily_wage) {
+        rows.push({
+          employee_id: exp.employee_id, year: rYear, month: rMonth,
+          amount: amt, note, created_by: user.id, expense_id: exp.id,
+        });
         continue;
       }
-      const parts = allocateSalaryFIFOWith(emp, Number(exp.amount), byEmp[exp.employee_id] || [], extraPaid);
+
+      // Maaşlı: FIFO ile en eski açık borçtan düş
+      const parts = allocateSalaryFIFOWith(emp, amt, byEmp[exp.employee_id] || [], extraPaid);
       for (const part of parts) {
         rows.push({
-          employee_id: exp.employee_id,
-          year: part.year,
-          month: part.month,
-          amount: part.amount,
-          note: `${exp.is_external ? 'Dışarıdan (havale)' : 'Gün sonu gideri'}${exp.description ? ' - ' + exp.description : ''}`,
-          created_by: user.id,
-          expense_id: exp.id,
+          employee_id: exp.employee_id, year: part.year, month: part.month,
+          amount: part.amount, note, created_by: user.id, expense_id: exp.id,
         });
       }
     }
@@ -832,25 +829,16 @@ export default function App() {
       for (const r of picked) {
         await supabase.from('expenses').update({ employee_id: r.employee_id }).eq('id', r.id);
       }
-      // 2) Maaş ödemelerini GÜN SONU TARİHİNİN AYINA yaz (FIFO değil!)
-      //    Ödeme hangi gün yapıldıysa o ayın maaşına sayılır.
-      const payRows = picked
-        .filter(r => r.date)
-        .map(r => {
-          const [yy, mm] = r.date.split('-').map(Number);
-          return {
-            employee_id: r.employee_id,
-            year: yy,
-            month: mm,
-            amount: r.amount,
-            note: `${r.is_external ? 'Dışarıdan (havale)' : 'Gün sonu gideri'}${r.description ? ' - ' + r.description : ''}`,
-            created_by: user.id,
-            expense_id: r.id,
-          };
-        });
-      if (payRows.length > 0) {
-        const { error: payErr } = await supabase.from('salary_payments').insert(payRows);
-        if (payErr) throw payErr;
+      // 2) Maaş ödemelerini oluştur — her gider KENDİ gün sonu tarihiyle işlenir.
+      //    Yövmiyeli: o günün ayına. Maaşlı: FIFO (eski borçtan).
+      const byDate = {};
+      picked.forEach(r => { const d = r.date || getTurkeyDate(); (byDate[d] = byDate[d] || []).push(r); });
+      for (const d of Object.keys(byDate).sort()) {
+        const expRows = byDate[d].map(r => ({
+          id: r.id, description: r.description, amount: r.amount,
+          employee_id: r.employee_id, is_external: r.is_external,
+        }));
+        await createSalaryPaymentsForExpenses(expRows, d);
       }
       await loadDailyReports();
       await loadSalaryPayments();
@@ -1347,7 +1335,7 @@ export default function App() {
         if (expError) throw expError;
         if (expData) {
           expenses = expData;
-          await createSalaryPaymentsForExpenses(expData);
+          await createSalaryPaymentsForExpenses(expData, reportForm.date);
         }
       }
 
@@ -1402,7 +1390,7 @@ export default function App() {
         if (expError) throw expError;
         if (expData) {
           newExpenses = expData;
-          await createSalaryPaymentsForExpenses(expData);
+          await createSalaryPaymentsForExpenses(expData, reportForm.date);
         }
       }
 
