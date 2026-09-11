@@ -2158,7 +2158,7 @@ export default function App() {
                   <div className="flex justify-between items-start mb-3 flex-wrap gap-2">
                     <div className="flex items-center gap-2">
                       <div className="w-9 h-9 rounded-full bg-black text-white flex items-center justify-center text-xs font-bold">{getEmpInitials(e.name)}</div>
-                      <div><p className="font-bold text-gray-900">{e.name}</p><p className="text-xs text-gray-500">{w.dayCount} gün çalıştı</p></div>
+                      <div><p className="font-bold text-gray-900">{e.name}</p><div className="flex items-center gap-1.5"><p className="text-xs text-gray-500">{w.dayCount} gün</p><span className="text-gray-300">·</span><span className="text-xs text-gray-500">Günlük:</span><input type="number" defaultValue={e.daily_rate || ''} placeholder="0" onBlur={async (ev) => { const v = ev.target.value === '' ? null : (parseFloat(String(ev.target.value).replace(',', '.')) || 0); await supabase.from('employees').update({ daily_rate: v }).eq('id', e.id); await loadEmployees(); }} className="w-20 text-xs border border-gray-200 rounded-lg px-1.5 py-0.5 bg-white focus:border-black focus:outline-none" /><span className="text-xs text-gray-400">₺</span></div>{e.daily_rate > 0 && w.dayCount > 0 && (<p className={`text-[11px] mt-0.5 ${Math.abs(w.total - (e.daily_rate * w.dayCount)) < 0.01 ? 'text-gray-400' : 'text-amber-600'}`}>Beklenen: {formatMoney(e.daily_rate * w.dayCount)}{Math.abs(w.total - (e.daily_rate * w.dayCount)) >= 0.01 ? ` · fark ${formatMoney(w.total - (e.daily_rate * w.dayCount))}` : ''}</p>)}</div>
                     </div>
                     <div className="flex items-center gap-3"><div className="text-right"><p className="text-xs text-gray-500">Ay toplamı</p><p className="text-xl font-bold text-emerald-700">{formatMoney(w.total)}</p></div><button onClick={async () => { await supabase.from('employees').update({ is_daily_wage: false }).eq('id', e.id); await loadEmployees(); }} className="text-xs border border-gray-300 text-gray-600 px-2 py-1 rounded-lg hover:bg-gray-100" title="Maaşlı çalışana geri çevir">Maaşa çevir</button></div>
                   </div>
@@ -2289,6 +2289,13 @@ export default function App() {
                         <input type="checkbox" checked={!!emp.is_daily_wage} onChange={async (ev) => { const v = ev.target.checked; await supabase.from('employees').update({ is_daily_wage: v }).eq('id', emp.id); await loadEmployees(); setSelectedEmployee({ ...emp, is_daily_wage: v }); }} className="w-3.5 h-3.5 accent-black" />
                         <span className="text-xs text-gray-600">Yövmiyeli çalışan (günlük)</span>
                       </label>
+                      {emp.is_daily_wage && (<div className="flex items-center gap-1.5 mt-1.5">
+                        <span className="text-xs text-gray-500">Günlük ücret:</span>
+                        <input type="number" defaultValue={emp.daily_rate || ''} placeholder="0"
+                          onBlur={async (ev) => { const v = ev.target.value === '' ? null : (parseFloat(String(ev.target.value).replace(',', '.')) || 0); await supabase.from('employees').update({ daily_rate: v }).eq('id', emp.id); await loadEmployees(); setSelectedEmployee({ ...emp, daily_rate: v }); }}
+                          className="w-28 text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white/70 focus:border-black focus:outline-none" />
+                        <span className="text-xs text-gray-400">₺ / gün</span>
+                      </div>)}
                     </div>
                   </div>
                   <button onClick={() => { setTerminateModal(emp); setError(''); }} className="border border-red-500 text-red-600 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-50 transition">İşten çıkar / Sil</button>
