@@ -832,12 +832,26 @@ export default function App() {
       for (const r of picked) {
         await supabase.from('expenses').update({ employee_id: r.employee_id }).eq('id', r.id);
       }
-      // 2) Maaş ödemelerini oluştur (mevcut FIFO mantığıyla)
-      const expRows = picked.map(r => ({
-        id: r.id, description: r.description, amount: r.amount,
-        employee_id: r.employee_id, is_external: r.is_external,
-      }));
-      await createSalaryPaymentsForExpenses(expRows);
+      // 2) Maaş ödemelerini GÜN SONU TARİHİNİN AYINA yaz (FIFO değil!)
+      //    Ödeme hangi gün yapıldıysa o ayın maaşına sayılır.
+      const payRows = picked
+        .filter(r => r.date)
+        .map(r => {
+          const [yy, mm] = r.date.split('-').map(Number);
+          return {
+            employee_id: r.employee_id,
+            year: yy,
+            month: mm,
+            amount: r.amount,
+            note: `${r.is_external ? 'Dışarıdan (havale)' : 'Gün sonu gideri'}${r.description ? ' - ' + r.description : ''}`,
+            created_by: user.id,
+            expense_id: r.id,
+          };
+        });
+      if (payRows.length > 0) {
+        const { error: payErr } = await supabase.from('salary_payments').insert(payRows);
+        if (payErr) throw payErr;
+      }
       await loadDailyReports();
       await loadSalaryPayments();
       setScanModal(null);
