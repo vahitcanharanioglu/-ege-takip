@@ -769,7 +769,7 @@ export default function App() {
       // 2) Personele atanmış tüm giderler
       const { data: exps, error: exErr } = await supabase
         .from('expenses')
-        .select('id, description, amount, employee_id, is_external, daily_report_id')
+        .select('id, description, amount, employee_id, is_external, daily_report_id, created_at')
         .not('employee_id', 'is', null);
       if (exErr) throw exErr;
 
@@ -790,31 +790,53 @@ export default function App() {
         if (error) throw error;
       }
 
-      // 5) Kalan (elle girilmiş) ödemeleri taze çek — FIFO tabanı
+      // 5) Elle girilmiş ödemeleri çek — bunlar KRONOLOJİK sırada devreye girer
       const empIds = [...new Set(list.map(x => x.employee_id))];
-      const byEmp = {};
+      let manualPays = [];
       if (empIds.length > 0) {
-        const { data: manualPays, error: mpErr } = await supabase
-          .from('salary_payments').select('employee_id, year, month, amount').in('employee_id', empIds);
+        const { data: mp, error: mpErr } = await supabase
+          .from('salary_payments')
+          .select('employee_id, year, month, amount, created_at')
+          .is('expense_id', null)
+          .in('employee_id', empIds);
         if (mpErr) throw mpErr;
-        (manualPays || []).forEach(p => { (byEmp[p.employee_id] = byEmp[p.employee_id] || []).push(p); });
+        manualPays = mp || [];
       }
 
-      // 6) Tarih sırasıyla FIFO uygula
-      const rows = [];
-      const extraPaid = {};
+      // 6) OLAYLARI GERÇEK OLUŞMA SIRASINA göre işle.
+      //    Orijinal veri böyle oluştu: her gider girildiğinde O AN mevcut
+      //    ödemelere göre FIFO hesaplanıyordu. Elle girilen ödemeler de
+      //    kendi zamanlarında devreye girer.
+      const events = [];
+      for (const m of manualPays) {
+        events.push({ t: m.created_at || '1970-01-01', kind: 'manual', p: m });
+      }
       for (const ex of list) {
+        events.push({ t: ex.created_at || (ex.date + 'T12:00:00'), kind: 'exp', p: ex });
+      }
+      events.sort((a, b) => String(a.t).localeCompare(String(b.t)));
+
+      const byEmp = {};   // employee_id -> [{year,month,amount}] (o ana kadarki ödemeler)
+      const rows = [];
+      for (const evt of events) {
+        if (evt.kind === 'manual') {
+          const m = evt.p;
+          (byEmp[m.employee_id] = byEmp[m.employee_id] || []).push({ year: m.year, month: m.month, amount: Number(m.amount) || 0 });
+          continue;
+        }
+        const ex = evt.p;
         const emp = employees.find(e => e.id === ex.employee_id);
         if (!emp) continue;
         const amt = Math.round((Number(ex.amount) || 0) * 100) / 100;
         if (amt <= 0) continue;
         const note = `${ex.is_external ? 'Dışarıdan (havale)' : 'Gün sonu gideri'}${ex.description ? ' - ' + ex.description : ''}`;
-        const parts = allocateSalaryFIFOWith(emp, amt, byEmp[ex.employee_id] || [], extraPaid);
+        const parts = allocateSalaryFIFOWith(emp, amt, byEmp[ex.employee_id] || [], {});
         for (const part of parts) {
           rows.push({
             employee_id: ex.employee_id, year: part.year, month: part.month,
             amount: part.amount, note, created_by: user.id, expense_id: ex.id,
           });
+          (byEmp[ex.employee_id] = byEmp[ex.employee_id] || []).push({ year: part.year, month: part.month, amount: part.amount });
         }
       }
 
