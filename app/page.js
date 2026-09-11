@@ -547,8 +547,12 @@ export default function App() {
   };
 
   // Kelime uzunluğuna göre kabul edilebilir hata payı
-  // Sıkı tutuldu: "mehmet" ile "ahmet" gibi farklı isimlerin karışmasını önler
-  const allowedTypos = (len) => (len <= 3 ? 0 : len <= 6 ? 1 : 2);
+  // Hata payı İSMİN uzunluğuna göre. Kısa isimlerde (<=4) hata payı yalnızca
+  // kelime uzunluğu isimle AYNIYSA verilir: "enre"→Emre olur, "alış"→Ali olmaz.
+  const allowedTypos = (nameLen, wordLen) => {
+    if (nameLen <= 4) return wordLen === nameLen ? 1 : 0;
+    return nameLen <= 6 ? 1 : 2;
+  };
 
   // Mesai gideri mi? (mesai = o günkü ek çalışma karşılığı; maaş borcundan DÜŞÜLMEZ)
   const isMesaiText = (text) => {
@@ -572,7 +576,7 @@ export default function App() {
           const d = editDistance(part, w);
           // Yazım hatası varsa ilk harf aynı olmalı (ahmet/mehmet karışmasın)
           if (d > 0 && part[0] !== w[0]) continue;
-          if (d <= allowedTypos(Math.max(part.length, w.length))) {
+          if (d <= allowedTypos(part.length, w.length)) {
             if (empBest === null || d < empBest) empBest = d;
           }
         }
@@ -834,8 +838,8 @@ export default function App() {
   const runEmployeeScan = async () => {
     setScanModal({ rows: [], loading: true, applying: false });
     try {
-      // Tarama aralığı: Mayıs–Eylül 2026 (daha eski aylar düzeltilmeyecek)
-      const SCAN_FROM = '2026-05-01', SCAN_TO = '2026-09-30';
+      // Tarama aralığı: SADECE Ağustos–Eylül 2026
+      const SCAN_FROM = '2026-08-01', SCAN_TO = '2026-09-30';
 
       // 1) Aralıktaki raporları DOĞRUDAN veritabanından çek (ekran state'ine güvenme)
       const { data: reps, error: repErr } = await supabase
@@ -2385,7 +2389,7 @@ export default function App() {
         </div></div>)}
         {scanModal && (<div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto"><div className="rounded-2xl p-6 w-full max-w-2xl my-8 max-h-[90vh] overflow-y-auto border border-white/60" style={{ background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
           <h3 className="text-xl font-bold mb-1 text-gray-900">Geçmiş Personel Ödemeleri</h3>
-          <p className="text-sm text-gray-500 mb-4">Mayıs–Eylül 2026 arası, açıklamasında personel adı geçen ama personele atanmamış giderler. Mesai hariç; havale (dışarıdan gelen) dahil.</p>
+          <p className="text-sm text-gray-500 mb-4">Ağustos–Eylül 2026 arası, açıklamasında personel adı geçen ama personele atanmamış giderler. Mesai hariç; havale dahil.</p>
           {scanModal.loading && <p className="text-sm text-gray-600 py-6 text-center">Taranıyor…</p>}
           {scanModal.error && <p className="text-sm text-red-600 mb-3">{scanModal.error}</p>}
           {!scanModal.loading && scanModal.rows.length === 0 && !scanModal.error && (<p className="text-sm text-gray-600 py-6 text-center">Atanmamış gider bulunamadı.</p>)}
