@@ -545,7 +545,8 @@ export default function App() {
   };
 
   // Kelime uzunluğuna göre kabul edilebilir hata payı
-  const allowedTypos = (len) => (len <= 3 ? 0 : len <= 5 ? 1 : 2);
+  // Sıkı tutuldu: "mehmet" ile "ahmet" gibi farklı isimlerin karışmasını önler
+  const allowedTypos = (len) => (len <= 3 ? 0 : len <= 6 ? 1 : 2);
 
   // Mesai gideri mi? (mesai = o günkü ek çalışma karşılığı; maaş borcundan DÜŞÜLMEZ)
   const isMesaiText = (text) => {
@@ -557,22 +558,30 @@ export default function App() {
   const detectEmployeeFromText = (text) => {
     const words = normalizeTR(text).split(' ').filter(w => w.length >= 3);
     if (words.length === 0) return null;
-    let best = null; // { id, score } — score düşük = iyi
+    let best = null;   // { id, score }
+    let tie = false;   // aynı skorda başka personel var mı (belirsiz)
     for (const emp of getActiveEmployees()) {
       const nameParts = normalizeTR(emp.name).split(' ').filter(Boolean);
+      let empBest = null;
       for (const part of nameParts) {
         if (part.length < 3) continue;
         for (const w of words) {
-          // Uzunluk farkı çok fazlaysa karşılaştırma
           if (Math.abs(part.length - w.length) > 2) continue;
           const d = editDistance(part, w);
+          // Yazım hatası varsa ilk harf aynı olmalı (ahmet/mehmet karışmasın)
+          if (d > 0 && part[0] !== w[0]) continue;
           if (d <= allowedTypos(Math.max(part.length, w.length))) {
-            if (!best || d < best.score) best = { id: emp.id, score: d };
+            if (empBest === null || d < empBest) empBest = d;
           }
         }
       }
+      if (empBest === null) continue;
+      if (!best || empBest < best.score) { best = { id: emp.id, score: empBest }; tie = false; }
+      else if (empBest === best.score && emp.id !== best.id) { tie = true; }
     }
-    return best ? best.id : null;
+    // Belirsizse atama yapma — kullanıcı elle seçsin
+    if (!best || tie) return null;
+    return best.id;
   };
 
   // Gider açıklaması yazılırken personeli otomatik seç (kullanıcı elle seçmediyse)
@@ -720,10 +729,14 @@ export default function App() {
       const repMap = {};
       dailyReports.forEach(r => { repMap[r.id] = r.date; });
 
+      // Tarama aralığı: Mayıs–Eylül 2026 (daha eski aylar düzeltilmeyecek)
+      const SCAN_FROM = '2026-05-01', SCAN_TO = '2026-09-30';
       const rows = [];
       for (const ex of (exps || [])) {
         if (ex.employee_id) continue;              // zaten atanmış
         if (isMesaiText(ex.description)) continue;  // mesai maaşa sayılmaz
+        const d = repMap[ex.daily_report_id] || '';
+        if (!d || d < SCAN_FROM || d > SCAN_TO) continue; // aralık dışı
         const empId = detectEmployeeFromText(ex.description);
         rows.push({
           id: ex.id,
@@ -1987,7 +2000,7 @@ export default function App() {
               </thead>
               <tbody>
                 {sorted.map(e => (
-                  <tr key={e.id} onClick={() => { setSelectedEmployee(e); }} className={`border-b cursor-pointer hover:bg-gray-50 ${emp && emp.id === e.id ? 'bg-gray-100' : ''}`}>
+                  <tr key={e.id} onClick={() => { setSelectedEmployee(e); const openP = SALARY_PERIOD.find(p => isPeriodDue(p, e) && getSalaryRemaining(e, p) > 0.009) || SALARY_PERIOD.find(p => getSalaryRemaining(e, p) > 0.009); if (openP) setSalaryDetailKey(openP.key); }} className={`border-b cursor-pointer hover:bg-gray-50 ${emp && emp.id === e.id ? 'bg-gray-100' : ''}`}>
                     <td className="p-3 sticky left-0 bg-white z-10">
                       <div className="flex items-center gap-2">
                         <span className="w-8 h-8 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-xs font-semibold flex-shrink-0">{getEmpInitials(e.name)}</span>
@@ -2165,7 +2178,7 @@ export default function App() {
         )}
         {scanModal && (<div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto"><div className="rounded-2xl p-6 w-full max-w-2xl my-8 max-h-[90vh] overflow-y-auto border border-white/60" style={{ background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
           <h3 className="text-xl font-bold mb-1 text-gray-900">Geçmiş Personel Ödemeleri</h3>
-          <p className="text-sm text-gray-500 mb-4">Açıklamasında personel adı geçen ama personele atanmamış giderler. Mesai kayıtları hariç tutuldu; havale (dışarıdan gelen) dahildir.</p>
+          <p className="text-sm text-gray-500 mb-4">Mayıs–Eylül 2026 arası, açıklamasında personel adı geçen ama personele atanmamış giderler. Mesai hariç; havale (dışarıdan gelen) dahil.</p>
           {scanModal.loading && <p className="text-sm text-gray-600 py-6 text-center">Taranıyor…</p>}
           {scanModal.error && <p className="text-sm text-red-600 mb-3">{scanModal.error}</p>}
           {!scanModal.loading && scanModal.rows.length === 0 && !scanModal.error && (<p className="text-sm text-gray-600 py-6 text-center">Atanmamış gider bulunamadı.</p>)}
