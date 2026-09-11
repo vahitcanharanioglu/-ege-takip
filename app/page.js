@@ -108,6 +108,8 @@ export default function App() {
   const [salarySortKey, setSalarySortKey] = useState(SALARY_PERIOD[3].key); // Eylül 2026
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [salaryDetailKey, setSalaryDetailKey] = useState(SALARY_PERIOD[3].key);
+  const [salaryTab, setSalaryTab] = useState('maas'); // 'maas' | 'yovmiye'
+  const [wageMonthKey, setWageMonthKey] = useState(SALARY_PERIOD[3].key);
   const [showAddEmployee, setShowAddEmployee] = useState(false);
   const [employeeForm, setEmployeeForm] = useState({ name: '', salary: '', startKey: SALARY_PERIOD[0].key, payment_day: 27 });
   const [salaryPaymentForm, setSalaryPaymentForm] = useState({ amount: '', note: '' });
@@ -714,6 +716,39 @@ export default function App() {
     }
   };
 
+  // ---- YÖVMİYE ----
+  // Yövmiyeli personel: gün çalışır, o gün parasını alır.
+  // Çalışılan gün = o günün gün sonunda adına gider kaydı olan gün (MESAİ hariç).
+  const getDailyWageEmployees = () => employees.filter(e => e.is_daily_wage);
+  const getSalariedEmployees = () => employees.filter(e => !e.is_daily_wage);
+
+  // Bir yövmiyecinin verilen ay içindeki ödeme günleri
+  // Dönüş: { days: { '2026-09-03': {amount, items:[...]}, ... }, total, dayCount }
+  const getDailyWageMonth = (emp, periodKeyStr) => {
+    const days = {};
+    let total = 0;
+    for (const r of dailyReports) {
+      const d = r.date || '';
+      if (!d.startsWith(periodKeyStr)) continue;   // '2026-09'
+      for (const ex of (r.expenses || [])) {
+        if (ex.employee_id !== emp.id) continue;
+        if (isMesaiText(ex.description)) continue;  // mesai yövmiye sayılmaz
+        const amt = Number(ex.amount) || 0;
+        if (!days[d]) days[d] = { amount: 0, items: [] };
+        days[d].amount += amt;
+        days[d].items.push({ description: ex.description, amount: amt, is_external: !!ex.is_external });
+        total += amt;
+      }
+    }
+    return { days, total, dayCount: Object.keys(days).length };
+  };
+
+  // Ay içindeki gün sayısı (takvim ızgarası için)
+  const daysInMonth = (periodKeyStr) => {
+    const [y, m] = periodKeyStr.split('-').map(Number);
+    return new Date(y, m, 0).getDate();
+  };
+
   // ---- GEÇMİŞ GİDER TARAMASI ----
   // Açıklamasında personel adı geçen ama personele ATANMAMIŞ eski giderleri bulur.
   // Mesai giderleri hariç tutulur (maaşa sayılmaz). Havale dahildir (personel parayı almıştır).
@@ -878,7 +913,8 @@ export default function App() {
     const p = SALARY_PERIOD.find(x => x.key === salarySortKey) || SALARY_PERIOD[0];
     // Çıkışı verilen personel, çıkış ayından SONRAKİ dönemlere bakılırken gizlenir.
     // Çıkış ayı ve öncesi dönemlerde görünmeye devam eder (kayıt korunur).
-    const arr = employees.filter(e => !e.end_key || p.key <= e.end_key);
+    // Yövmiyeliler maaş tablosunda görünmez (ayrı sekmede takip edilir)
+    const arr = employees.filter(e => !e.is_daily_wage && (!e.end_key || p.key <= e.end_key));
     arr.sort((a, b) => {
       switch (salarySortBy) {
         case 'rem-desc': return getSalaryRemaining(b, p) - getSalaryRemaining(a, p);
@@ -1943,10 +1979,11 @@ export default function App() {
   // ============ MAAŞ TAKİBİ (sadece admin) — 12 AY ============
   if (screen === 'maas' && user?.role === 'admin') {
     const sorted = getSortedEmployees();
-    const totalDue = employees.reduce((acc, e) => acc + SALARY_PERIOD.reduce((s, p) => s + getSalaryDue(e, p), 0), 0);
-    const totalPaid = employees.reduce((acc, e) => acc + SALARY_PERIOD.reduce((s, p) => s + getSalaryPaid(e, p), 0), 0);
+    const salariedList = getSalariedEmployees();
+    const totalDue = salariedList.reduce((acc, e) => acc + SALARY_PERIOD.reduce((s, p) => s + getSalaryDue(e, p), 0), 0);
+    const totalPaid = salariedList.reduce((acc, e) => acc + SALARY_PERIOD.reduce((s, p) => s + getSalaryPaid(e, p), 0), 0);
     // Vadesi gelmiş (güncel ay ve öncesi) ödenmemiş tutar = şu an gerçek borç
-    const totalDueNow = employees.reduce((acc, e) => acc + SALARY_PERIOD.filter(p => isPeriodDue(p, e)).reduce((s, p) => s + getSalaryRemaining(e, p), 0), 0);
+    const totalDueNow = salariedList.reduce((acc, e) => acc + SALARY_PERIOD.filter(p => isPeriodDue(p, e)).reduce((s, p) => s + getSalaryRemaining(e, p), 0), 0);
     const emp = selectedEmployee ? employees.find(e => e.id === selectedEmployee.id) : null;
     const detailPeriod = SALARY_PERIOD.find(x => x.key === salaryDetailKey) || SALARY_PERIOD[0];
 
@@ -1956,6 +1993,50 @@ export default function App() {
         <header className="sticky top-0 z-30 border-b border-white/50" style={{ background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)' }}><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => { setScreen('menu'); setSelectedEmployee(null); }} className="text-black p-1 -ml-1 rounded-lg hover:bg-black/5"><Icon path={IconPaths.back} size={22} /></button><h1 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Icon path={IconPaths.receipt} size={20} /> Maaş Takibi</h1><span className="bg-black text-white text-xs px-2 py-1 rounded-full">Sadece Admin</span></div><div className="flex items-center gap-2"><button onClick={runEmployeeScan} className="inline-flex items-center gap-1.5 bg-black text-white px-3 py-2 rounded-lg text-sm hover:bg-gray-800" title="Açıklamasında personel adı geçen ama atanmamış eski giderleri bul"><Icon path={IconPaths.search} size={15} /> Geçmişi Tara</button><button onClick={handleLogout} className="inline-flex items-center gap-1.5 bg-black/5 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-black/10"><Icon path={IconPaths.logout} size={15} /> Çıkış</button></div></div></header>
 
         <main className="max-w-7xl mx-auto px-4 py-6">
+          <div className="flex gap-2 mb-4">
+            <button onClick={() => setSalaryTab('maas')} className={`px-4 py-2 rounded-xl text-sm font-semibold ${salaryTab === 'maas' ? 'bg-black text-white' : 'bg-black/5 text-gray-700 hover:bg-black/10'}`}>Maaş ({getSalariedEmployees().length})</button>
+            <button onClick={() => setSalaryTab('yovmiye')} className={`px-4 py-2 rounded-xl text-sm font-semibold ${salaryTab === 'yovmiye' ? 'bg-black text-white' : 'bg-black/5 text-gray-700 hover:bg-black/10'}`}>Yövmiye ({getDailyWageEmployees().length})</button>
+          </div>
+          {salaryTab === 'yovmiye' ? (<div>
+            <div className="flex items-center gap-2 mb-4 flex-wrap">
+              <span className="text-sm text-gray-600">Ay:</span>
+              <select value={wageMonthKey} onChange={(e) => setWageMonthKey(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-xl text-sm bg-white/70 focus:border-black focus:outline-none">
+                {SALARY_PERIOD.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+              </select>
+              <span className="text-xs text-gray-400">Çalışılan gün = o gün adına gider kaydı olan gün (mesai hariç)</span>
+            </div>
+            {getDailyWageEmployees().length === 0 ? (
+              <div className="rounded-2xl p-8 border border-white/50 shadow text-center text-gray-500 text-sm">Henüz yövmiyeli personel yok. Maaş sekmesinden bir personele tıklayıp <span className="font-semibold">"Yövmiyeli çalışan"</span> kutusunu işaretle.</div>
+            ) : (<div className="space-y-4">
+              {getDailyWageEmployees().map(e => {
+                const w = getDailyWageMonth(e, wageMonthKey);
+                const dim = daysInMonth(wageMonthKey);
+                return (<div key={e.id} className="rounded-2xl p-4 border border-white/50 shadow" style={{ background: 'rgba(255,255,255,0.75)' }}>
+                  <div className="flex justify-between items-start mb-3 flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-9 h-9 rounded-full bg-black text-white flex items-center justify-center text-xs font-bold">{getEmpInitials(e.name)}</div>
+                      <div><p className="font-bold text-gray-900">{e.name}</p><p className="text-xs text-gray-500">{w.dayCount} gün çalıştı</p></div>
+                    </div>
+                    <div className="text-right"><p className="text-xs text-gray-500">Ay toplamı</p><p className="text-xl font-bold text-emerald-700">{formatMoney(w.total)}</p></div>
+                  </div>
+                  <div className="grid grid-cols-7 sm:grid-cols-11 gap-1">
+                    {Array.from({length: dim}, (_, i) => {
+                      const dayNo = i + 1;
+                      const dk = `${wageMonthKey}-${String(dayNo).padStart(2,'0')}`;
+                      const rec = w.days[dk];
+                      return (<div key={dayNo} title={rec ? `${dayNo}: ${formatMoney(rec.amount)}` : `${dayNo}: yok`} className={`rounded-lg text-center py-1 border ${rec ? 'bg-emerald-50 border-emerald-300' : 'bg-gray-50 border-gray-200'}`}>
+                        <div className={`text-[10px] ${rec ? 'text-emerald-700' : 'text-gray-400'}`}>{dayNo}</div>
+                        {rec && <div className="text-[10px] font-bold text-emerald-800 leading-tight">{Math.round(rec.amount)}</div>}
+                      </div>);
+                    })}
+                  </div>
+                  {w.dayCount > 0 && (<div className="mt-3 space-y-1 max-h-40 overflow-y-auto">
+                    {Object.keys(w.days).sort().map(dk => (<div key={dk} className="flex justify-between text-xs bg-white p-1.5 rounded border border-gray-100"><span className="text-gray-600">{formatDateTR(dk)}<span className="text-gray-400 ml-1.5">{w.days[dk].items.map(it => it.description).join(', ')}</span></span><span className="font-semibold text-gray-900">{formatMoney(w.days[dk].amount)}</span></div>))}
+                  </div>)}
+                </div>);
+              })}
+            </div>)}
+          </div>) : (<>
           <div className="mb-2 text-sm text-gray-500">{SALARY_PERIOD[0].label} – {SALARY_PERIOD[11].label} (12 ay)</div>
 
           {/* Özet kartları */}
@@ -2061,6 +2142,10 @@ export default function App() {
                           {Array.from({length:31},(_,i)=>i+1).map(d => <option key={d} value={d}>Her ayın {d}'i</option>)}
                         </select>
                       </div>
+                      <label className="flex items-center gap-1.5 mt-1.5 cursor-pointer w-fit">
+                        <input type="checkbox" checked={!!emp.is_daily_wage} onChange={async (ev) => { const v = ev.target.checked; await supabase.from('employees').update({ is_daily_wage: v }).eq('id', emp.id); await loadEmployees(); setSelectedEmployee({ ...emp, is_daily_wage: v }); }} className="w-3.5 h-3.5 accent-black" />
+                        <span className="text-xs text-gray-600">Yövmiyeli çalışan (günlük)</span>
+                      </label>
                     </div>
                   </div>
                   <button onClick={() => { setTerminateModal(emp); setError(''); }} className="border border-red-500 text-red-600 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-50 transition">İşten çıkar / Sil</button>
@@ -2104,6 +2189,7 @@ export default function App() {
               </div>
             );
           })()}
+          </>)}
         </main>
 
         {/* Personel ekleme modalı */}
