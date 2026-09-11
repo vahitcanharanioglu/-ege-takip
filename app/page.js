@@ -697,6 +697,7 @@ export default function App() {
         rows.push({
           employee_id: exp.employee_id, year: rYear, month: rMonth,
           amount: amt, note, created_by: user.id, expense_id: exp.id,
+          created_at: `${rd}T12:00:00+03:00`,
         });
         continue;
       }
@@ -707,6 +708,7 @@ export default function App() {
         rows.push({
           employee_id: exp.employee_id, year: part.year, month: part.month,
           amount: part.amount, note, created_by: user.id, expense_id: exp.id,
+          created_at: `${rd}T12:00:00+03:00`,
         });
       }
     }
@@ -782,8 +784,12 @@ export default function App() {
         .filter(ex => ex.date)
         .sort((a, b) => a.date.localeCompare(b.date));
 
-      // 4) Maaşlıların gider bağlantılı ödemelerini sil (elle girilenler kalır)
-      const expIds = list.map(x => x.id);
+      // 4) Maaşlıların gider bağlantılı ödemelerini sil (elle girilenler kalır).
+      //    MESAİ giderlerine bağlı eski ödemeler de silinir — mesai maaşa sayılmaz.
+      const mesaiIds = (exps || [])
+        .filter(ex => salariedIds.has(ex.employee_id) && isMesaiText(ex.description))
+        .map(ex => ex.id);
+      const expIds = [...list.map(x => x.id), ...mesaiIds];
       for (let i = 0; i < expIds.length; i += 100) {
         const chunk = expIds.slice(i, i + 100);
         const { error } = await supabase.from('salary_payments').delete().in('expense_id', chunk);
@@ -835,6 +841,7 @@ export default function App() {
           rows.push({
             employee_id: ex.employee_id, year: part.year, month: part.month,
             amount: part.amount, note, created_by: user.id, expense_id: ex.id,
+            created_at: `${ex.date}T12:00:00+03:00`,   // ödeme tarihi = gün sonu tarihi
           });
           (byEmp[ex.employee_id] = byEmp[ex.employee_id] || []).push({ year: part.year, month: part.month, amount: part.amount });
         }
