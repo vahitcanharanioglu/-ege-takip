@@ -2005,6 +2005,14 @@ export default function App() {
               </select>
               <span className="text-xs text-gray-400">Çalışılan gün = o gün adına gider kaydı olan gün (mesai hariç)</span>
             </div>
+            <div className="flex items-center gap-2 mb-4 flex-wrap rounded-xl p-3 border border-gray-200" style={{ background: 'rgba(255,255,255,0.6)' }}>
+              <span className="text-sm text-gray-600">Personeli yövmiyeye çevir:</span>
+              <select value="" onChange={async (ev) => { const id = ev.target.value; if (!id) return; await supabase.from('employees').update({ is_daily_wage: true }).eq('id', id); await loadEmployees(); }} className="px-3 py-1.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-black focus:outline-none">
+                <option value="">Personel seç…</option>
+                {getSalariedEmployees().filter(e => !e.end_key || e.end_key >= currentMonthKey).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+              <span className="text-xs text-gray-400">Geçmiş kayıtlar silinmez, geri alınabilir.</span>
+            </div>
             {getDailyWageEmployees().length === 0 ? (
               <div className="rounded-2xl p-8 border border-white/50 shadow text-center text-gray-500 text-sm">Henüz yövmiyeli personel yok. Maaş sekmesinden bir personele tıklayıp <span className="font-semibold">"Yövmiyeli çalışan"</span> kutusunu işaretle.</div>
             ) : (<div className="space-y-4">
@@ -2017,7 +2025,7 @@ export default function App() {
                       <div className="w-9 h-9 rounded-full bg-black text-white flex items-center justify-center text-xs font-bold">{getEmpInitials(e.name)}</div>
                       <div><p className="font-bold text-gray-900">{e.name}</p><p className="text-xs text-gray-500">{w.dayCount} gün çalıştı</p></div>
                     </div>
-                    <div className="text-right"><p className="text-xs text-gray-500">Ay toplamı</p><p className="text-xl font-bold text-emerald-700">{formatMoney(w.total)}</p></div>
+                    <div className="flex items-center gap-3"><div className="text-right"><p className="text-xs text-gray-500">Ay toplamı</p><p className="text-xl font-bold text-emerald-700">{formatMoney(w.total)}</p></div><button onClick={async () => { await supabase.from('employees').update({ is_daily_wage: false }).eq('id', e.id); await loadEmployees(); }} className="text-xs border border-gray-300 text-gray-600 px-2 py-1 rounded-lg hover:bg-gray-100" title="Maaşlı çalışana geri çevir">Maaşa çevir</button></div>
                   </div>
                   <div className="grid grid-cols-7 sm:grid-cols-11 gap-1">
                     {Array.from({length: dim}, (_, i) => {
