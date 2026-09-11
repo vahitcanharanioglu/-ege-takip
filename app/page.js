@@ -76,6 +76,8 @@ export default function App() {
   const [adisyoLoading, setAdisyoLoading] = useState(false);
   const [adisyoError, setAdisyoError] = useState('');
   const [adisyoProgress, setAdisyoProgress] = useState(''); // "3 / 8 sayfa" gibi ilerleme metni
+  // Geçmiş giderlerde personel adı taraması
+  const [scanModal, setScanModal] = useState(null); // { rows: [...], loading, applying }
   const [expensesList, setExpensesList] = useState([]);
   const [newExpense, setNewExpense] = useState({ description: '', amount: '', employee_id: '', is_external: false });
   const [expenseSearch, setExpenseSearch] = useState({ open: false, query: '', from: '', to: '' });
@@ -493,7 +495,7 @@ export default function App() {
   const handleAddExpense = () => {
     if (!newExpense.description || !newExpense.amount) return;
     setExpensesList([...expensesList, { id: 'temp_'+Date.now(), description: newExpense.description, amount: parseFloat(newExpense.amount), employee_id: newExpense.employee_id || null, is_external: !!newExpense.is_external }]);
-    setNewExpense({ description: '', amount: '', employee_id: '', is_external: false });
+    setNewExpense({ description: '', amount: '', employee_id: '', is_external: false, employeeManual: false, autoDetected: false });
   };
 
   const handleRemoveExpense = (id) => setExpensesList(expensesList.filter(e => e.id !== id));
@@ -510,6 +512,82 @@ export default function App() {
   // ---- GİDER -> MAAŞ ENTEGRASYONU ----
   // Aktif personeller (işten çıkmamış olanlar)
   const getActiveEmployees = () => employees.filter(e => !e.end_key || e.end_key >= currentMonthKey);
+
+  // ---- PERSONEL ADI OTOMATİK ALGILAMA (yazım hatası toleranslı) ----
+  // Türkçe karakterleri sadeleştirir: İ/ı→i, Ğ→g, Ü→u, Ş→s, Ö→o, Ç→c
+  const normalizeTR = (s) => (s || '')
+    .toLocaleLowerCase('tr-TR')
+    .replace(/ı/g, 'i').replace(/İ/g, 'i')
+    .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
+    .replace(/ö/g, 'o').replace(/ç/g, 'c')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // İki kelime arasındaki düzenleme mesafesi (Levenshtein)
+  const editDistance = (a, b) => {
+    if (a === b) return 0;
+    if (!a.length) return b.length;
+    if (!b.length) return a.length;
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i];
+      for (let j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(
+          prev[j] + 1,
+          cur[j - 1] + 1,
+          prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+        );
+      }
+      prev = cur;
+    }
+    return prev[b.length];
+  };
+
+  // Kelime uzunluğuna göre kabul edilebilir hata payı
+  const allowedTypos = (len) => (len <= 3 ? 0 : len <= 5 ? 1 : 2);
+
+  // Mesai gideri mi? (mesai = o günkü ek çalışma karşılığı; maaş borcundan DÜŞÜLMEZ)
+  const isMesaiText = (text) => {
+    const n = normalizeTR(text);
+    return /\bmesai\w*\b/.test(n) || /\bfazla mesai\b/.test(n);
+  };
+
+  // Açıklama metninde personel adı ara; en iyi eşleşen personeli döndür
+  const detectEmployeeFromText = (text) => {
+    const words = normalizeTR(text).split(' ').filter(w => w.length >= 3);
+    if (words.length === 0) return null;
+    let best = null; // { id, score } — score düşük = iyi
+    for (const emp of getActiveEmployees()) {
+      const nameParts = normalizeTR(emp.name).split(' ').filter(Boolean);
+      for (const part of nameParts) {
+        if (part.length < 3) continue;
+        for (const w of words) {
+          // Uzunluk farkı çok fazlaysa karşılaştırma
+          if (Math.abs(part.length - w.length) > 2) continue;
+          const d = editDistance(part, w);
+          if (d <= allowedTypos(Math.max(part.length, w.length))) {
+            if (!best || d < best.score) best = { id: emp.id, score: d };
+          }
+        }
+      }
+    }
+    return best ? best.id : null;
+  };
+
+  // Gider açıklaması yazılırken personeli otomatik seç (kullanıcı elle seçmediyse)
+  const handleExpenseDescriptionChange = (value) => {
+    setNewExpense(prev => {
+      const next = { ...prev, description: value };
+      if (!prev.employeeManual) {
+        const detected = detectEmployeeFromText(value);
+        next.employee_id = detected || '';
+        next.autoDetected = !!detected;
+      }
+      return next;
+    });
+  };
+
   const getEmployeeName = (id) => employees.find(e => e.id === id)?.name || '';
 
 
@@ -535,7 +613,7 @@ export default function App() {
       const rem = remainingOf(p);
       if (rem > 0) {
         const take = Math.min(rem, left);
-        parts.push({ year: p.year, month: p.month, amount: Math.round(take * 1000) / 1000 });
+        parts.push({ year: p.year, month: p.month, amount: Math.round(take * 100) / 100 });
         extraPaid[`${emp.id}|${p.key}`] = (extraPaid[`${emp.id}|${p.key}`] || 0) + take;
         left -= take;
       }
@@ -548,7 +626,7 @@ export default function App() {
         const rem = remainingOf(p);
         if (rem > 0) {
           const take = Math.min(rem, left);
-          parts.push({ year: p.year, month: p.month, amount: Math.round(take * 1000) / 1000 });
+          parts.push({ year: p.year, month: p.month, amount: Math.round(take * 100) / 100 });
           extraPaid[`${emp.id}|${p.key}`] = (extraPaid[`${emp.id}|${p.key}`] || 0) + take;
           left -= take;
         }
@@ -558,14 +636,24 @@ export default function App() {
     if (left > 0.001) {
       const cur = SALARY_PERIOD.find(p => p.key === currentMonthKey) || SALARY_PERIOD[SALARY_PERIOD.length - 1];
       const ex = parts.find(x => x.year === cur.year && x.month === cur.month);
-      if (ex) ex.amount = Math.round((ex.amount + left) * 1000) / 1000;
-      else parts.push({ year: cur.year, month: cur.month, amount: Math.round(left * 1000) / 1000 });
+      if (ex) ex.amount = Math.round((ex.amount + left) * 100) / 100;
+      else parts.push({ year: cur.year, month: cur.month, amount: Math.round(left * 100) / 100 });
+    }
+    // Yuvarlama sonrası toplam, gider tutarıyla birebir eşit olmalı (kuruş kaybı önlenir)
+    if (parts.length > 0) {
+      const sum = parts.reduce((s, x) => s + x.amount, 0);
+      const diff = Math.round((amount - sum) * 100) / 100;
+      if (diff !== 0) {
+        parts[parts.length - 1].amount = Math.round((parts[parts.length - 1].amount + diff) * 100) / 100;
+      }
     }
     return parts;
   };
 
   const createSalaryPaymentsForExpenses = async (exps) => {
-    const withEmp = (exps || []).filter(e => e.employee_id);
+    // Mesai giderleri maaş borcundan düşülmez (o günkü ek çalışma karşılığı).
+    // Havale (dışarıdan gelen) ise personele ödenmiş sayılır — dahil edilir.
+    const withEmp = (exps || []).filter(e => e.employee_id && !isMesaiText(e.description));
     if (withEmp.length === 0) return;
     // İlgili personellerin GÜNCEL ödemelerini DB'den taze çek (state gecikmesini önle)
     const empIds = [...new Set(withEmp.map(e => e.employee_id))];
@@ -579,7 +667,24 @@ export default function App() {
     const extraPaid = {}; // aynı batch içinde birikimli düşüş
     for (const exp of withEmp) {
       const emp = employees.find(e => e.id === exp.employee_id);
-      if (!emp) continue;
+      if (!emp) {
+        // Personel listede yoksa ödemeyi yine de kaydet (cari aya) — aksi halde
+        // gider var ama maaş ödemesi yok durumu oluşur ve toplamlar tutmaz.
+        const cur = SALARY_PERIOD.find(p => p.key === currentMonthKey) || SALARY_PERIOD[0];
+        const amt = Math.round((Number(exp.amount) || 0) * 100) / 100;
+        if (amt > 0) {
+          rows.push({
+            employee_id: exp.employee_id,
+            year: cur.year,
+            month: cur.month,
+            amount: amt,
+            note: `${exp.is_external ? 'Dışarıdan (havale)' : 'Gün sonu gideri'}${exp.description ? ' - ' + exp.description : ''}`,
+            created_by: user.id,
+            expense_id: exp.id,
+          });
+        }
+        continue;
+      }
       const parts = allocateSalaryFIFOWith(emp, Number(exp.amount), byEmp[exp.employee_id] || [], extraPaid);
       for (const part of parts) {
         rows.push({
@@ -597,6 +702,81 @@ export default function App() {
       const { error } = await supabase.from('salary_payments').insert(rows);
       if (error) throw error;
       await loadSalaryPayments();
+    }
+  };
+
+  // ---- GEÇMİŞ GİDER TARAMASI ----
+  // Açıklamasında personel adı geçen ama personele ATANMAMIŞ eski giderleri bulur.
+  // Mesai giderleri hariç tutulur (maaşa sayılmaz). Havale dahildir (personel parayı almıştır).
+  const runEmployeeScan = async () => {
+    setScanModal({ rows: [], loading: true, applying: false });
+    try {
+      const { data: exps, error } = await supabase
+        .from('expenses')
+        .select('id, description, amount, employee_id, is_external, daily_report_id');
+      if (error) throw error;
+
+      // Rapor tarihlerini eşlemek için
+      const repMap = {};
+      dailyReports.forEach(r => { repMap[r.id] = r.date; });
+
+      const rows = [];
+      for (const ex of (exps || [])) {
+        if (ex.employee_id) continue;              // zaten atanmış
+        if (isMesaiText(ex.description)) continue;  // mesai maaşa sayılmaz
+        const empId = detectEmployeeFromText(ex.description);
+        rows.push({
+          id: ex.id,
+          description: ex.description,
+          amount: Number(ex.amount) || 0,
+          is_external: !!ex.is_external,
+          date: repMap[ex.daily_report_id] || '',
+          employee_id: empId || '',
+          employee_name: empId ? getEmployeeName(empId) : '',
+          matched: !!empId,          // algoritma buldu mu
+          selected: !!empId,          // bulunanlar varsayılan seçili
+        });
+      }
+      rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      setScanModal({ rows, loading: false, applying: false, showUnmatched: false });
+    } catch (e) {
+      setScanModal({ rows: [], loading: false, applying: false, error: e.message });
+    }
+  };
+
+  const toggleScanRow = (id) => {
+    setScanModal(m => m ? { ...m, rows: m.rows.map(r => r.id === id ? { ...r, selected: !r.selected } : r) } : m);
+  };
+
+  // Satırdaki personeli elle değiştir (algoritma yanlış bulduysa veya hiç bulamadıysa)
+  const setScanRowEmployee = (id, empId) => {
+    setScanModal(m => m ? { ...m, rows: m.rows.map(r => r.id === id
+      ? { ...r, employee_id: empId, employee_name: empId ? getEmployeeName(empId) : '', selected: !!empId }
+      : r) } : m);
+  };
+
+  // Seçili satırları uygula: gideri personele ata + maaş ödemesi oluştur
+  const applyEmployeeScan = async () => {
+    if (!scanModal) return;
+    const picked = scanModal.rows.filter(r => r.selected && r.employee_id);
+    if (picked.length === 0) return;
+    setScanModal(m => ({ ...m, applying: true }));
+    try {
+      // 1) Giderleri personele ata
+      for (const r of picked) {
+        await supabase.from('expenses').update({ employee_id: r.employee_id }).eq('id', r.id);
+      }
+      // 2) Maaş ödemelerini oluştur (mevcut FIFO mantığıyla)
+      const expRows = picked.map(r => ({
+        id: r.id, description: r.description, amount: r.amount,
+        employee_id: r.employee_id, is_external: r.is_external,
+      }));
+      await createSalaryPaymentsForExpenses(expRows);
+      await loadDailyReports();
+      await loadSalaryPayments();
+      setScanModal(null);
+    } catch (e) {
+      setScanModal(m => ({ ...m, applying: false, error: 'Uygulanamadı: ' + e.message }));
     }
   };
 
@@ -906,7 +1086,7 @@ export default function App() {
     // Formda yazılıp + ile eklenmemiş gider varsa otomatik listeye ekle (kaybolmasın)
     if (newExpense.description && newExpense.amount) {
       setExpensesList([...expensesList, { id: 'temp_'+Date.now(), description: newExpense.description, amount: parseFloat(newExpense.amount), employee_id: newExpense.employee_id || null, is_external: !!newExpense.is_external }]);
-      setNewExpense({ description: '', amount: '', employee_id: '', is_external: false });
+      setNewExpense({ description: '', amount: '', employee_id: '', is_external: false, employeeManual: false, autoDetected: false });
     }
     setShowExpenseConfirm(type);
   };
@@ -1656,10 +1836,10 @@ export default function App() {
         </main>
         
         {/* Add Report Modal */}
-        {showAddReport && (<div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto"><div className="rounded-2xl p-6 w-full max-w-lg my-8 max-h-[90vh] overflow-y-auto border border-white/60" style={{ background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}><h3 className="text-xl font-bold mb-4 text-gray-900">Gün Sonu — {selectedBusiness.name}</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tarih</label><div className="text-lg font-bold border-2 rounded-lg px-4 py-2 bg-gray-50">{formatDateTR(reportForm.date)}</div></div>{isRestaurantBusiness(selectedBusiness) && (<div className="border border-gray-300 rounded-xl p-3 bg-gray-50"><div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold text-gray-700">Adisyo</span><button onClick={() => fetchAdisyoDay(reportForm.date)} disabled={adisyoLoading} className="bg-black text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-gray-800 disabled:opacity-50 inline-flex items-center gap-1.5">{adisyoLoading ? 'Getiriliyor…' : (<><Icon path={IconPaths.arrowDown} size={15}/> Adisyo'dan Getir</>)}</button></div>{adisyoError && <p className="text-xs text-red-600 mt-2">{adisyoError}</p>}{adisyoLoading && adisyoProgress && <p className="text-xs text-gray-500 mt-2">{adisyoProgress}</p>}{adisyoPayments.length > 0 && (<div className="mt-3 space-y-1.5">{adisyoPayments.map((p, i) => { const isNakit = !p.is_debit && !p.is_meal_card && (p.payment_name||'').toLocaleLowerCase('tr-TR').includes('nakit'); return (<div key={i} className={`flex justify-between items-center gap-2 text-sm rounded-lg px-3 py-1.5 border ${isNakit ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-gray-200'}`}><span className="text-gray-700 flex-1 min-w-0 truncate">{p.payment_name}{isNakit && <span className="ml-1.5 text-xs bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded-full">kasa</span>}{p.is_meal_card && <span className="ml-1.5 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">yemek kartı</span>}{p.is_debit && <span className="ml-1.5 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">veresiye</span>}</span><input type="number" value={p.amount} onChange={(e) => updateAdisyoPaymentAmount(i, e.target.value)} className="w-28 px-2 py-1 border border-gray-200 rounded-lg text-sm text-right focus:border-black focus:outline-none bg-white" /><button onClick={() => removeAdisyoPayment(i)} className="text-red-400 hover:text-red-600" title="Kaldır"><Icon path={IconPaths.close} size={14}/></button></div>); })}<div className="flex justify-between pt-1 text-sm"><span className="font-semibold text-gray-600">Adisyo Toplam:</span><span className="font-bold text-gray-900">{formatMoney(adisyoPayments.reduce((s,p)=>s+(Number(p.amount)||0),0))}</span></div><p className="text-xs text-gray-400">Kalemleri düzenleyebilirsin. Yalnızca <span className="text-emerald-700 font-medium">nakit</span> kasa hesabına girer; kart/online gelirlere ayrı yazılır.</p></div>)}</div>)}{isRestaurantBusiness(selectedBusiness) ? (<div><label className="text-sm font-medium text-gray-600">Nakit (Adisyo'dan)</label><input type="number" value={reportForm.cash} onChange={(e) => setRestaurantCash(e.target.value)} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="0" /><p className="text-xs text-gray-400 mt-1">Eldeki nakit otomatik hesaplanır: Nakit − nakit giderleri.</p></div>) : (<><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium text-gray-600">Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="0" /></div><div><label className="text-sm font-medium text-gray-600">Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="0" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium text-gray-600">Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="0" /></div><div><label className="text-sm font-medium text-gray-600">Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="0" /></div></div></>)}<div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-3">Giderler</label><div className="space-y-2 mb-3"><div className="flex gap-2"><input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none transition bg-white/70" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none transition bg-white/70" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-black text-white px-4 py-2 rounded-lg flex items-center justify-center"><Icon path={IconPaths.plus} size={18}/></button></div>{getActiveEmployees().length > 0 && (<select value={newExpense.employee_id} onChange={(e) => setNewExpense({...newExpense, employee_id: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white/70 text-gray-700 focus:border-black focus:outline-none transition"><option value="">Normal gider</option>{getActiveEmployees().map(emp => (<option key={emp.id} value={emp.id}>{emp.name}</option>))}</select>)}<label className="flex items-center gap-2 bg-gray-100 border border-gray-300 rounded-lg px-3 py-2 cursor-pointer"><input type="checkbox" checked={newExpense.is_external} onChange={(e) => setNewExpense({...newExpense, is_external: e.target.checked})} className="w-4 h-4 accent-black" /><span className="text-sm text-gray-700 font-medium">Dışarıdan gelen (havale) — kasadan düşmez</span></label></div><div className="max-h-48 overflow-y-auto">{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}{e.employee_id && (<span className="ml-2 inline-flex items-center gap-1 text-xs bg-black text-white px-1.5 py-0.5 rounded-full"><Icon path={IconPaths.user} size={10}/>{getEmployeeName(e.employee_id)}</span>)}{e.is_external && (<span className="ml-2 text-xs bg-gray-600 text-white px-1.5 py-0.5 rounded-full">Dışarıdan</span>)}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => startEditExpense(e)} className="text-gray-400 hover:text-black" title="Düzenle"><Icon path={IconPaths.edit} size={15}/></button><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400 hover:text-red-600" title="Kaldır"><Icon path={IconPaths.close} size={15}/></button></div></div>))}</div><div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Kasa Gideri:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div>{getTotalExternal() > 0 && (<div className="flex justify-between pt-1"><span className="font-semibold text-gray-600">Dışarıdan Gelen:</span><span className="font-bold text-gray-700">{formatMoney(getTotalExternal())}</span></div>)}</div><div><label className="text-sm font-medium text-gray-600">Notlar</label><textarea value={reportForm.notes} onChange={(e) => setReportForm({...reportForm, notes: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowAddReport(false); setExpensesList([]); setAdisyoPayments([]); setAdisyoError(''); setAdisyoProgress(''); }} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">İptal</button><button onClick={() => handleSaveReportClick('add')} className="flex-1 bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition">Kaydet</button></div></div></div>)}
+        {showAddReport && (<div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto"><div className="rounded-2xl p-6 w-full max-w-lg my-8 max-h-[90vh] overflow-y-auto border border-white/60" style={{ background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}><h3 className="text-xl font-bold mb-4 text-gray-900">Gün Sonu — {selectedBusiness.name}</h3><div className="space-y-4"><div><label className="text-sm font-medium">Tarih</label><div className="text-lg font-bold border-2 rounded-lg px-4 py-2 bg-gray-50">{formatDateTR(reportForm.date)}</div></div>{isRestaurantBusiness(selectedBusiness) && (<div className="border border-gray-300 rounded-xl p-3 bg-gray-50"><div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold text-gray-700">Adisyo</span><button onClick={() => fetchAdisyoDay(reportForm.date)} disabled={adisyoLoading} className="bg-black text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-gray-800 disabled:opacity-50 inline-flex items-center gap-1.5">{adisyoLoading ? 'Getiriliyor…' : (<><Icon path={IconPaths.arrowDown} size={15}/> Adisyo'dan Getir</>)}</button></div>{adisyoError && <p className="text-xs text-red-600 mt-2">{adisyoError}</p>}{adisyoLoading && adisyoProgress && <p className="text-xs text-gray-500 mt-2">{adisyoProgress}</p>}{adisyoPayments.length > 0 && (<div className="mt-3 space-y-1.5">{adisyoPayments.map((p, i) => { const isNakit = !p.is_debit && !p.is_meal_card && (p.payment_name||'').toLocaleLowerCase('tr-TR').includes('nakit'); return (<div key={i} className={`flex justify-between items-center gap-2 text-sm rounded-lg px-3 py-1.5 border ${isNakit ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-gray-200'}`}><span className="text-gray-700 flex-1 min-w-0 truncate">{p.payment_name}{isNakit && <span className="ml-1.5 text-xs bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded-full">kasa</span>}{p.is_meal_card && <span className="ml-1.5 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">yemek kartı</span>}{p.is_debit && <span className="ml-1.5 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">veresiye</span>}</span><input type="number" value={p.amount} onChange={(e) => updateAdisyoPaymentAmount(i, e.target.value)} className="w-28 px-2 py-1 border border-gray-200 rounded-lg text-sm text-right focus:border-black focus:outline-none bg-white" /><button onClick={() => removeAdisyoPayment(i)} className="text-red-400 hover:text-red-600" title="Kaldır"><Icon path={IconPaths.close} size={14}/></button></div>); })}<div className="flex justify-between pt-1 text-sm"><span className="font-semibold text-gray-600">Adisyo Toplam:</span><span className="font-bold text-gray-900">{formatMoney(adisyoPayments.reduce((s,p)=>s+(Number(p.amount)||0),0))}</span></div><p className="text-xs text-gray-400">Kalemleri düzenleyebilirsin. Yalnızca <span className="text-emerald-700 font-medium">nakit</span> kasa hesabına girer; kart/online gelirlere ayrı yazılır.</p></div>)}</div>)}{isRestaurantBusiness(selectedBusiness) ? (<div><label className="text-sm font-medium text-gray-600">Nakit (Adisyo'dan)</label><input type="number" value={reportForm.cash} onChange={(e) => setRestaurantCash(e.target.value)} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="0" /><p className="text-xs text-gray-400 mt-1">Eldeki nakit otomatik hesaplanır: Nakit − nakit giderleri.</p></div>) : (<><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium text-gray-600">Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="0" /></div><div><label className="text-sm font-medium text-gray-600">Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="0" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium text-gray-600">Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="0" /></div><div><label className="text-sm font-medium text-gray-600">Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" placeholder="0" /></div></div></>)}<div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-3">Giderler</label><div className="space-y-2 mb-3"><div className="flex gap-2"><input type="text" value={newExpense.description} onChange={(e) => handleExpenseDescriptionChange(e.target.value)} className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none transition bg-white/70" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none transition bg-white/70" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-black text-white px-4 py-2 rounded-lg flex items-center justify-center"><Icon path={IconPaths.plus} size={18}/></button></div>{getActiveEmployees().length > 0 && (<div><select value={newExpense.employee_id} onChange={(e) => setNewExpense({...newExpense, employee_id: e.target.value, employeeManual: true, autoDetected: false})} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white/70 text-gray-700 focus:border-black focus:outline-none transition"><option value="">Normal gider</option>{getActiveEmployees().map(emp => (<option key={emp.id} value={emp.id}>{emp.name}</option>))}</select>{newExpense.autoDetected && newExpense.employee_id && (<p className="text-xs text-emerald-700 mt-1 flex items-center gap-1"><Icon path={IconPaths.user} size={11}/> Otomatik seçildi: <span className="font-semibold">{getEmployeeName(newExpense.employee_id)}</span></p>)}{newExpense.employee_id && isMesaiText(newExpense.description) && (<p className="text-xs text-amber-600 mt-1">Mesai gideri — maaş borcundan düşülmez.</p>)}</div>)}<label className="flex items-center gap-2 bg-gray-100 border border-gray-300 rounded-lg px-3 py-2 cursor-pointer"><input type="checkbox" checked={newExpense.is_external} onChange={(e) => setNewExpense({...newExpense, is_external: e.target.checked})} className="w-4 h-4 accent-black" /><span className="text-sm text-gray-700 font-medium">Dışarıdan gelen (havale) — kasadan düşmez</span></label></div><div className="max-h-48 overflow-y-auto">{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}{e.employee_id && (<span className="ml-2 inline-flex items-center gap-1 text-xs bg-black text-white px-1.5 py-0.5 rounded-full"><Icon path={IconPaths.user} size={10}/>{getEmployeeName(e.employee_id)}</span>)}{e.is_external && (<span className="ml-2 text-xs bg-gray-600 text-white px-1.5 py-0.5 rounded-full">Dışarıdan</span>)}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => startEditExpense(e)} className="text-gray-400 hover:text-black" title="Düzenle"><Icon path={IconPaths.edit} size={15}/></button><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400 hover:text-red-600" title="Kaldır"><Icon path={IconPaths.close} size={15}/></button></div></div>))}</div><div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Kasa Gideri:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div>{getTotalExternal() > 0 && (<div className="flex justify-between pt-1"><span className="font-semibold text-gray-600">Dışarıdan Gelen:</span><span className="font-bold text-gray-700">{formatMoney(getTotalExternal())}</span></div>)}</div><div><label className="text-sm font-medium text-gray-600">Notlar</label><textarea value={reportForm.notes} onChange={(e) => setReportForm({...reportForm, notes: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" rows={2} /></div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowAddReport(false); setExpensesList([]); setAdisyoPayments([]); setAdisyoError(''); setAdisyoProgress(''); }} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">İptal</button><button onClick={() => handleSaveReportClick('add')} className="flex-1 bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition">Kaydet</button></div></div></div>)}
         
         {/* Edit Report Modal */}
-        {showEditReport && (<div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto"><div className="rounded-2xl p-6 w-full max-w-lg my-8 max-h-[90vh] overflow-y-auto border border-white/60" style={{ background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}><h3 className="text-xl font-bold mb-4 text-gray-900">Rapor Düzenle</h3><div className="space-y-4">{isRestaurantBusiness(selectedBusiness) && (<div className="border border-gray-300 rounded-xl p-3 bg-gray-50"><div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold text-gray-700">Adisyo</span><button onClick={() => fetchAdisyoDay(reportForm.date)} disabled={adisyoLoading} className="bg-black text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-gray-800 disabled:opacity-50 inline-flex items-center gap-1.5">{adisyoLoading ? 'Getiriliyor…' : (<><Icon path={IconPaths.arrowDown} size={15}/> Adisyo'dan Getir</>)}</button></div>{adisyoError && <p className="text-xs text-red-600 mt-2">{adisyoError}</p>}{adisyoLoading && adisyoProgress && <p className="text-xs text-gray-500 mt-2">{adisyoProgress}</p>}{adisyoPayments.length > 0 && (<div className="mt-3 space-y-1.5">{adisyoPayments.map((p, i) => { const isNakit = !p.is_debit && !p.is_meal_card && (p.payment_name||'').toLocaleLowerCase('tr-TR').includes('nakit'); return (<div key={i} className={`flex justify-between items-center gap-2 text-sm rounded-lg px-3 py-1.5 border ${isNakit ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-gray-200'}`}><span className="text-gray-700 flex-1 min-w-0 truncate">{p.payment_name}{isNakit && <span className="ml-1.5 text-xs bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded-full">kasa</span>}{p.is_meal_card && <span className="ml-1.5 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">yemek kartı</span>}{p.is_debit && <span className="ml-1.5 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">veresiye</span>}</span><input type="number" value={p.amount} onChange={(e) => updateAdisyoPaymentAmount(i, e.target.value)} className="w-28 px-2 py-1 border border-gray-200 rounded-lg text-sm text-right focus:border-black focus:outline-none bg-white" /><button onClick={() => removeAdisyoPayment(i)} className="text-red-400 hover:text-red-600" title="Kaldır"><Icon path={IconPaths.close} size={14}/></button></div>); })}<div className="flex justify-between pt-1 text-sm"><span className="font-semibold text-gray-600">Adisyo Toplam:</span><span className="font-bold text-gray-900">{formatMoney(adisyoPayments.reduce((s,p)=>s+(Number(p.amount)||0),0))}</span></div><p className="text-xs text-gray-400">Kalemleri düzenleyebilirsin. Yalnızca <span className="text-emerald-700 font-medium">nakit</span> kasa hesabına girer.</p></div>)}</div>)}{isRestaurantBusiness(selectedBusiness) ? (<div><label className="text-sm font-medium text-gray-600">Nakit (Adisyo'dan)</label><input type="number" value={reportForm.cash} onChange={(e) => setRestaurantCash(e.target.value)} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /><p className="text-xs text-gray-400 mt-1">Eldeki nakit otomatik: Nakit − nakit giderleri.</p></div>) : (<><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium text-gray-600">Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div><div><label className="text-sm font-medium text-gray-600">Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium text-gray-600">Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div><div><label className="text-sm font-medium text-gray-600">Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div></div></>)}<div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-3">Giderler</label><div className="space-y-2 mb-3"><div className="flex gap-2"><input type="text" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})} className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none transition bg-white/70" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none transition bg-white/70" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-black text-white px-4 py-2 rounded-lg flex items-center justify-center"><Icon path={IconPaths.plus} size={18}/></button></div>{getActiveEmployees().length > 0 && (<select value={newExpense.employee_id} onChange={(e) => setNewExpense({...newExpense, employee_id: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white/70 text-gray-700 focus:border-black focus:outline-none transition"><option value="">Normal gider</option>{getActiveEmployees().map(emp => (<option key={emp.id} value={emp.id}>{emp.name}</option>))}</select>)}<label className="flex items-center gap-2 bg-gray-100 border border-gray-300 rounded-lg px-3 py-2 cursor-pointer"><input type="checkbox" checked={newExpense.is_external} onChange={(e) => setNewExpense({...newExpense, is_external: e.target.checked})} className="w-4 h-4 accent-black" /><span className="text-sm text-gray-700 font-medium">Dışarıdan gelen (havale) — kasadan düşmez</span></label></div><div className="max-h-48 overflow-y-auto">{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}{e.employee_id && (<span className="ml-2 inline-flex items-center gap-1 text-xs bg-black text-white px-1.5 py-0.5 rounded-full"><Icon path={IconPaths.user} size={10}/>{getEmployeeName(e.employee_id)}</span>)}{e.is_external && (<span className="ml-2 text-xs bg-gray-600 text-white px-1.5 py-0.5 rounded-full">Dışarıdan</span>)}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => startEditExpense(e)} className="text-gray-400 hover:text-black" title="Düzenle"><Icon path={IconPaths.edit} size={15}/></button><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400 hover:text-red-600" title="Kaldır"><Icon path={IconPaths.close} size={15}/></button></div></div>))}</div><div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Kasa Gideri:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div>{getTotalExternal() > 0 && (<div className="flex justify-between pt-1"><span className="font-semibold text-gray-600">Dışarıdan Gelen:</span><span className="font-bold text-gray-700">{formatMoney(getTotalExternal())}</span></div>)}</div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowEditReport(false); setExpensesList([]); setAdisyoPayments([]); setAdisyoError(''); setAdisyoProgress(''); }} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">İptal</button><button onClick={() => handleSaveReportClick('edit')} className="flex-1 bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition">Güncelle</button></div></div></div>)}
+        {showEditReport && (<div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto"><div className="rounded-2xl p-6 w-full max-w-lg my-8 max-h-[90vh] overflow-y-auto border border-white/60" style={{ background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}><h3 className="text-xl font-bold mb-4 text-gray-900">Rapor Düzenle</h3><div className="space-y-4">{isRestaurantBusiness(selectedBusiness) && (<div className="border border-gray-300 rounded-xl p-3 bg-gray-50"><div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold text-gray-700">Adisyo</span><button onClick={() => fetchAdisyoDay(reportForm.date)} disabled={adisyoLoading} className="bg-black text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-gray-800 disabled:opacity-50 inline-flex items-center gap-1.5">{adisyoLoading ? 'Getiriliyor…' : (<><Icon path={IconPaths.arrowDown} size={15}/> Adisyo'dan Getir</>)}</button></div>{adisyoError && <p className="text-xs text-red-600 mt-2">{adisyoError}</p>}{adisyoLoading && adisyoProgress && <p className="text-xs text-gray-500 mt-2">{adisyoProgress}</p>}{adisyoPayments.length > 0 && (<div className="mt-3 space-y-1.5">{adisyoPayments.map((p, i) => { const isNakit = !p.is_debit && !p.is_meal_card && (p.payment_name||'').toLocaleLowerCase('tr-TR').includes('nakit'); return (<div key={i} className={`flex justify-between items-center gap-2 text-sm rounded-lg px-3 py-1.5 border ${isNakit ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-gray-200'}`}><span className="text-gray-700 flex-1 min-w-0 truncate">{p.payment_name}{isNakit && <span className="ml-1.5 text-xs bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded-full">kasa</span>}{p.is_meal_card && <span className="ml-1.5 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">yemek kartı</span>}{p.is_debit && <span className="ml-1.5 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">veresiye</span>}</span><input type="number" value={p.amount} onChange={(e) => updateAdisyoPaymentAmount(i, e.target.value)} className="w-28 px-2 py-1 border border-gray-200 rounded-lg text-sm text-right focus:border-black focus:outline-none bg-white" /><button onClick={() => removeAdisyoPayment(i)} className="text-red-400 hover:text-red-600" title="Kaldır"><Icon path={IconPaths.close} size={14}/></button></div>); })}<div className="flex justify-between pt-1 text-sm"><span className="font-semibold text-gray-600">Adisyo Toplam:</span><span className="font-bold text-gray-900">{formatMoney(adisyoPayments.reduce((s,p)=>s+(Number(p.amount)||0),0))}</span></div><p className="text-xs text-gray-400">Kalemleri düzenleyebilirsin. Yalnızca <span className="text-emerald-700 font-medium">nakit</span> kasa hesabına girer.</p></div>)}</div>)}{isRestaurantBusiness(selectedBusiness) ? (<div><label className="text-sm font-medium text-gray-600">Nakit (Adisyo'dan)</label><input type="number" value={reportForm.cash} onChange={(e) => setRestaurantCash(e.target.value)} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /><p className="text-xs text-gray-400 mt-1">Eldeki nakit otomatik: Nakit − nakit giderleri.</p></div>) : (<><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium text-gray-600">Kredi Kartı</label><input type="number" value={reportForm.credit_card} onChange={(e) => setReportForm({...reportForm, credit_card: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div><div><label className="text-sm font-medium text-gray-600">Nakit</label><input type="number" value={reportForm.cash} onChange={(e) => setReportForm({...reportForm, cash: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="text-sm font-medium text-gray-600">Yemek Kartı</label><input type="number" value={reportForm.meal_cards} onChange={(e) => setReportForm({...reportForm, meal_cards: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div><div><label className="text-sm font-medium text-gray-600">Eldeki Nakit</label><input type="number" value={reportForm.actual_cash} onChange={(e) => setReportForm({...reportForm, actual_cash: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:border-black focus:outline-none focus:ring-1 focus:ring-black transition bg-white/70" /></div></div></>)}<div className="border-2 border-red-200 rounded-lg p-4 bg-red-50"><label className="text-sm font-bold text-red-600 block mb-3">Giderler</label><div className="space-y-2 mb-3"><div className="flex gap-2"><input type="text" value={newExpense.description} onChange={(e) => handleExpenseDescriptionChange(e.target.value)} className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none transition bg-white/70" placeholder="Açıklama" /><input type="number" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} className="w-24 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none transition bg-white/70" placeholder="Tutar" /><button onClick={handleAddExpense} className="bg-black text-white px-4 py-2 rounded-lg flex items-center justify-center"><Icon path={IconPaths.plus} size={18}/></button></div>{getActiveEmployees().length > 0 && (<div><select value={newExpense.employee_id} onChange={(e) => setNewExpense({...newExpense, employee_id: e.target.value, employeeManual: true, autoDetected: false})} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white/70 text-gray-700 focus:border-black focus:outline-none transition"><option value="">Normal gider</option>{getActiveEmployees().map(emp => (<option key={emp.id} value={emp.id}>{emp.name}</option>))}</select>{newExpense.autoDetected && newExpense.employee_id && (<p className="text-xs text-emerald-700 mt-1 flex items-center gap-1"><Icon path={IconPaths.user} size={11}/> Otomatik seçildi: <span className="font-semibold">{getEmployeeName(newExpense.employee_id)}</span></p>)}{newExpense.employee_id && isMesaiText(newExpense.description) && (<p className="text-xs text-amber-600 mt-1">Mesai gideri — maaş borcundan düşülmez.</p>)}</div>)}<label className="flex items-center gap-2 bg-gray-100 border border-gray-300 rounded-lg px-3 py-2 cursor-pointer"><input type="checkbox" checked={newExpense.is_external} onChange={(e) => setNewExpense({...newExpense, is_external: e.target.checked})} className="w-4 h-4 accent-black" /><span className="text-sm text-gray-700 font-medium">Dışarıdan gelen (havale) — kasadan düşmez</span></label></div><div className="max-h-48 overflow-y-auto">{expensesList.map(e => (<div key={e.id} className="flex justify-between items-center bg-white p-2 rounded-lg mb-2"><span className="text-sm">{e.description}{e.employee_id && (<span className="ml-2 inline-flex items-center gap-1 text-xs bg-black text-white px-1.5 py-0.5 rounded-full"><Icon path={IconPaths.user} size={10}/>{getEmployeeName(e.employee_id)}</span>)}{e.is_external && (<span className="ml-2 text-xs bg-gray-600 text-white px-1.5 py-0.5 rounded-full">Dışarıdan</span>)}</span><div className="flex items-center gap-2"><span className="text-sm font-semibold text-red-600">{formatMoney(e.amount)}</span><button onClick={() => startEditExpense(e)} className="text-gray-400 hover:text-black" title="Düzenle"><Icon path={IconPaths.edit} size={15}/></button><button onClick={() => handleRemoveExpense(e.id)} className="text-red-400 hover:text-red-600" title="Kaldır"><Icon path={IconPaths.close} size={15}/></button></div></div>))}</div><div className="flex justify-between pt-2 border-t border-red-200"><span className="font-semibold text-red-700">Kasa Gideri:</span><span className="font-bold text-red-700">{formatMoney(getTotalExpenses())}</span></div>{getTotalExternal() > 0 && (<div className="flex justify-between pt-1"><span className="font-semibold text-gray-600">Dışarıdan Gelen:</span><span className="font-bold text-gray-700">{formatMoney(getTotalExternal())}</span></div>)}</div></div><div className="flex gap-2 mt-6"><button onClick={() => { setShowEditReport(false); setExpensesList([]); setAdisyoPayments([]); setAdisyoError(''); setAdisyoProgress(''); }} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">İptal</button><button onClick={() => handleSaveReportClick('edit')} className="flex-1 bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition">Güncelle</button></div></div></div>)}
         
         <DeleteConfirmModal />
       </div>
@@ -1760,7 +1940,7 @@ export default function App() {
     return (
       <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #f5f5f7 0%, #e8e8ec 50%, #dddde3 100%)' }}>
         <LoadingOverlay />
-        <header className="sticky top-0 z-30 border-b border-white/50" style={{ background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)' }}><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => { setScreen('menu'); setSelectedEmployee(null); }} className="text-black p-1 -ml-1 rounded-lg hover:bg-black/5"><Icon path={IconPaths.back} size={22} /></button><h1 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Icon path={IconPaths.receipt} size={20} /> Maaş Takibi</h1><span className="bg-black text-white text-xs px-2 py-1 rounded-full">Sadece Admin</span></div><button onClick={handleLogout} className="inline-flex items-center gap-1.5 bg-black/5 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-black/10"><Icon path={IconPaths.logout} size={15} /> Çıkış</button></div></header>
+        <header className="sticky top-0 z-30 border-b border-white/50" style={{ background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)' }}><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => { setScreen('menu'); setSelectedEmployee(null); }} className="text-black p-1 -ml-1 rounded-lg hover:bg-black/5"><Icon path={IconPaths.back} size={22} /></button><h1 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Icon path={IconPaths.receipt} size={20} /> Maaş Takibi</h1><span className="bg-black text-white text-xs px-2 py-1 rounded-full">Sadece Admin</span></div><div className="flex items-center gap-2"><button onClick={runEmployeeScan} className="inline-flex items-center gap-1.5 bg-black text-white px-3 py-2 rounded-lg text-sm hover:bg-gray-800" title="Açıklamasında personel adı geçen ama atanmamış eski giderleri bul"><Icon path={IconPaths.search} size={15} /> Geçmişi Tara</button><button onClick={handleLogout} className="inline-flex items-center gap-1.5 bg-black/5 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-black/10"><Icon path={IconPaths.logout} size={15} /> Çıkış</button></div></div></header>
 
         <main className="max-w-7xl mx-auto px-4 py-6">
           <div className="mb-2 text-sm text-gray-500">{SALARY_PERIOD[0].label} – {SALARY_PERIOD[11].label} (12 ay)</div>
@@ -1983,6 +2163,29 @@ export default function App() {
             </div>
           </div>
         )}
+        {scanModal && (<div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto"><div className="rounded-2xl p-6 w-full max-w-2xl my-8 max-h-[90vh] overflow-y-auto border border-white/60" style={{ background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
+          <h3 className="text-xl font-bold mb-1 text-gray-900">Geçmiş Personel Ödemeleri</h3>
+          <p className="text-sm text-gray-500 mb-4">Açıklamasında personel adı geçen ama personele atanmamış giderler. Mesai kayıtları hariç tutuldu; havale (dışarıdan gelen) dahildir.</p>
+          {scanModal.loading && <p className="text-sm text-gray-600 py-6 text-center">Taranıyor…</p>}
+          {scanModal.error && <p className="text-sm text-red-600 mb-3">{scanModal.error}</p>}
+          {!scanModal.loading && scanModal.rows.length === 0 && !scanModal.error && (<p className="text-sm text-gray-600 py-6 text-center">Atanmamış gider bulunamadı.</p>)}
+          {!scanModal.loading && scanModal.rows.length > 0 && (<>
+            <div className="flex gap-2 mb-3"><button onClick={() => setScanModal(m => ({...m, showUnmatched: false}))} className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${!scanModal.showUnmatched ? 'bg-black text-white' : 'bg-black/5 text-gray-700'}`}>Bulunanlar ({scanModal.rows.filter(r=>r.matched).length})</button><button onClick={() => setScanModal(m => ({...m, showUnmatched: true}))} className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${scanModal.showUnmatched ? 'bg-black text-white' : 'bg-black/5 text-gray-700'}`}>Eşleşmeyenler ({scanModal.rows.filter(r=>!r.matched).length})</button></div>
+            {scanModal.showUnmatched && <p className="text-xs text-gray-500 mb-2">Adı algılanamayan giderler. Personele aitse listeden seç; değilse boş bırak.</p>}
+            <div className="flex justify-between items-center mb-2 text-sm"><span className="text-gray-600">{scanModal.rows.filter(r=>r.selected && r.employee_id).length} kayıt atanacak</span><span className="font-bold text-gray-900">Toplam: {formatMoney(scanModal.rows.filter(r=>r.selected && r.employee_id).reduce((s,r)=>s+r.amount,0))}</span></div>
+            <div className="max-h-80 overflow-y-auto space-y-1.5 mb-4">{scanModal.rows.filter(r => scanModal.showUnmatched ? !r.matched : r.matched).map(r => (
+              <div key={r.id} className={`p-2 rounded-lg border ${r.selected && r.employee_id ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-gray-200'}`}>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" checked={r.selected} disabled={!r.employee_id} onChange={() => toggleScanRow(r.id)} className="w-4 h-4 accent-black disabled:opacity-30" />
+                  <span className="flex-1 min-w-0"><span className="text-sm text-gray-800">{r.description}</span>{r.is_external && <span className="ml-1.5 text-[10px] bg-gray-600 text-white px-1.5 py-0.5 rounded-full">havale</span>}<span className="block text-xs text-gray-500">{r.date ? formatDateTR(r.date) : '—'}</span></span>
+                  <span className="text-sm font-bold text-red-600 whitespace-nowrap">{formatMoney(r.amount)}</span>
+                </div>
+                <select value={r.employee_id} onChange={(e) => setScanRowEmployee(r.id, e.target.value)} className="w-full mt-1.5 px-2 py-1 border border-gray-200 rounded-lg text-xs bg-white text-gray-700 focus:border-black focus:outline-none"><option value="">— personele atama —</option>{getActiveEmployees().map(emp => (<option key={emp.id} value={emp.id}>{emp.name}</option>))}</select>
+              </div>))}
+            </div>
+          </>)}
+          <div className="flex gap-2"><button onClick={() => setScanModal(null)} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10 transition">Kapat</button>{scanModal.rows.length > 0 && (<button onClick={applyEmployeeScan} disabled={scanModal.applying || scanModal.rows.filter(r=>r.selected).length===0} className="flex-1 bg-black text-white py-3 rounded-xl font-semibold hover:bg-gray-800 transition disabled:opacity-50">{scanModal.applying ? 'Uygulanıyor…' : 'Seçilenleri Ata'}</button>)}</div>
+        </div></div>)}
       </div>
     );
   }
