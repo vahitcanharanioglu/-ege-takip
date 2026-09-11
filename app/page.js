@@ -746,6 +746,88 @@ export default function App() {
     return new Date(y, m, 0).getDate();
   };
 
+  // ---- MAAŞ ÖDEMELERİNİ YENİDEN HESAPLA (onarım) ----
+  // Maaşlı personelin gider bağlantılı ödemelerini siler ve giderlerden
+  // tarih sırasıyla FIFO ile yeniden kurar. Elle girilen ödemelere DOKUNMAZ.
+  // Yövmiyeliler bu işlemin dışındadır (onlar gün ayına yazılır).
+  const [rebuildModal, setRebuildModal] = useState(null);
+
+  const runSalaryRebuild = async () => {
+    setRebuildModal({ loading: true, done: false });
+    try {
+      // 1) Rapor tarihleri
+      const { data: reps, error: repErr } = await supabase
+        .from('daily_reports').select('id, date');
+      if (repErr) throw repErr;
+      const repMap = {};
+      (reps || []).forEach(r => { repMap[r.id] = r.date; });
+
+      // 2) Personele atanmış tüm giderler
+      const { data: exps, error: exErr } = await supabase
+        .from('expenses')
+        .select('id, description, amount, employee_id, is_external, daily_report_id')
+        .not('employee_id', 'is', null);
+      if (exErr) throw exErr;
+
+      // 3) Sadece MAAŞLI personelin, mesai olmayan giderleri — tarih sırasıyla
+      const salariedIds = new Set(getSalariedEmployees().map(e => e.id));
+      const list = (exps || [])
+        .filter(ex => salariedIds.has(ex.employee_id))
+        .filter(ex => !isMesaiText(ex.description))
+        .map(ex => ({ ...ex, date: repMap[ex.daily_report_id] || '' }))
+        .filter(ex => ex.date)
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      // 4) Maaşlıların gider bağlantılı ödemelerini sil (elle girilenler kalır)
+      const expIds = list.map(x => x.id);
+      for (let i = 0; i < expIds.length; i += 100) {
+        const chunk = expIds.slice(i, i + 100);
+        const { error } = await supabase.from('salary_payments').delete().in('expense_id', chunk);
+        if (error) throw error;
+      }
+
+      // 5) Kalan (elle girilmiş) ödemeleri taze çek — FIFO tabanı
+      const empIds = [...new Set(list.map(x => x.employee_id))];
+      const byEmp = {};
+      if (empIds.length > 0) {
+        const { data: manualPays, error: mpErr } = await supabase
+          .from('salary_payments').select('employee_id, year, month, amount').in('employee_id', empIds);
+        if (mpErr) throw mpErr;
+        (manualPays || []).forEach(p => { (byEmp[p.employee_id] = byEmp[p.employee_id] || []).push(p); });
+      }
+
+      // 6) Tarih sırasıyla FIFO uygula
+      const rows = [];
+      const extraPaid = {};
+      for (const ex of list) {
+        const emp = employees.find(e => e.id === ex.employee_id);
+        if (!emp) continue;
+        const amt = Math.round((Number(ex.amount) || 0) * 100) / 100;
+        if (amt <= 0) continue;
+        const note = `${ex.is_external ? 'Dışarıdan (havale)' : 'Gün sonu gideri'}${ex.description ? ' - ' + ex.description : ''}`;
+        const parts = allocateSalaryFIFOWith(emp, amt, byEmp[ex.employee_id] || [], extraPaid);
+        for (const part of parts) {
+          rows.push({
+            employee_id: ex.employee_id, year: part.year, month: part.month,
+            amount: part.amount, note, created_by: user.id, expense_id: ex.id,
+          });
+        }
+      }
+
+      // 7) Toplu ekle
+      for (let i = 0; i < rows.length; i += 200) {
+        const chunk = rows.slice(i, i + 200);
+        const { error } = await supabase.from('salary_payments').insert(chunk);
+        if (error) throw error;
+      }
+
+      await loadSalaryPayments();
+      setRebuildModal({ loading: false, done: true, count: rows.length, expCount: list.length });
+    } catch (e) {
+      setRebuildModal({ loading: false, done: false, error: e.message });
+    }
+  };
+
   // ---- GEÇMİŞ GİDER TARAMASI ----
   // Açıklamasında personel adı geçen ama personele ATANMAMIŞ eski giderleri bulur.
   // Mesai giderleri hariç tutulur (maaşa sayılmaz). Havale dahildir (personel parayı almıştır).
@@ -2010,7 +2092,7 @@ export default function App() {
     return (
       <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #f5f5f7 0%, #e8e8ec 50%, #dddde3 100%)' }}>
         <LoadingOverlay />
-        <header className="sticky top-0 z-30 border-b border-white/50" style={{ background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)' }}><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => { setScreen('menu'); setSelectedEmployee(null); }} className="text-black p-1 -ml-1 rounded-lg hover:bg-black/5"><Icon path={IconPaths.back} size={22} /></button><h1 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Icon path={IconPaths.receipt} size={20} /> Maaş Takibi</h1><span className="bg-black text-white text-xs px-2 py-1 rounded-full">Sadece Admin</span></div><div className="flex items-center gap-2"><button onClick={runEmployeeScan} className="inline-flex items-center gap-1.5 bg-black text-white px-3 py-2 rounded-lg text-sm hover:bg-gray-800" title="Açıklamasında personel adı geçen ama atanmamış eski giderleri bul"><Icon path={IconPaths.search} size={15} /> Geçmişi Tara</button><button onClick={handleLogout} className="inline-flex items-center gap-1.5 bg-black/5 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-black/10"><Icon path={IconPaths.logout} size={15} /> Çıkış</button></div></div></header>
+        <header className="sticky top-0 z-30 border-b border-white/50" style={{ background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(16px) saturate(150%)', WebkitBackdropFilter: 'blur(16px) saturate(150%)' }}><div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center"><div className="flex items-center gap-4"><button onClick={() => { setScreen('menu'); setSelectedEmployee(null); }} className="text-black p-1 -ml-1 rounded-lg hover:bg-black/5"><Icon path={IconPaths.back} size={22} /></button><h1 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Icon path={IconPaths.receipt} size={20} /> Maaş Takibi</h1><span className="bg-black text-white text-xs px-2 py-1 rounded-full">Sadece Admin</span></div><div className="flex items-center gap-2"><button onClick={() => setRebuildModal({ confirm: true })} className="inline-flex items-center gap-1.5 border border-amber-500 text-amber-700 px-3 py-2 rounded-lg text-sm hover:bg-amber-50" title="Maaşlıların ödemelerini giderlerden FIFO ile yeniden hesapla"><Icon path={IconPaths.refresh} size={15} /> Yeniden Hesapla</button><button onClick={runEmployeeScan} className="inline-flex items-center gap-1.5 bg-black text-white px-3 py-2 rounded-lg text-sm hover:bg-gray-800" title="Açıklamasında personel adı geçen ama atanmamış eski giderleri bul"><Icon path={IconPaths.search} size={15} /> Geçmişi Tara</button><button onClick={handleLogout} className="inline-flex items-center gap-1.5 bg-black/5 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-black/10"><Icon path={IconPaths.logout} size={15} /> Çıkış</button></div></div></header>
 
         <main className="max-w-7xl mx-auto px-4 py-6">
           <div className="flex gap-2 mb-4">
@@ -2290,6 +2372,17 @@ export default function App() {
             </div>
           </div>
         )}
+        {rebuildModal && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="rounded-2xl p-6 w-full max-w-md border border-white/60" style={{ background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(20px)' }}>
+          <h3 className="text-xl font-bold mb-2 text-gray-900">Maaş Ödemelerini Yeniden Hesapla</h3>
+          {rebuildModal.confirm && (<>
+            <p className="text-sm text-gray-600 mb-3">Maaşlı personelin gün sonu giderlerinden gelen ödemeleri silinip, tarih sırasıyla FIFO ile (en eski borçtan) yeniden kurulur.</p>
+            <ul className="text-xs text-gray-500 mb-4 space-y-1 list-disc pl-4"><li>Giderler silinmez</li><li>Elle girilen ödemelere dokunulmaz</li><li>Yövmiyeliler etkilenmez</li></ul>
+            <div className="flex gap-2"><button onClick={() => setRebuildModal(null)} className="flex-1 bg-black/5 text-gray-700 py-3 rounded-xl font-semibold hover:bg-black/10">Vazgeç</button><button onClick={runSalaryRebuild} className="flex-1 bg-amber-600 text-white py-3 rounded-xl font-semibold hover:bg-amber-700">Yeniden Hesapla</button></div>
+          </>)}
+          {rebuildModal.loading && <p className="text-sm text-gray-600 py-6 text-center">Hesaplanıyor, lütfen bekle…</p>}
+          {rebuildModal.error && (<><p className="text-sm text-red-600 mb-4">{rebuildModal.error}</p><button onClick={() => setRebuildModal(null)} className="w-full bg-black/5 text-gray-700 py-3 rounded-xl font-semibold">Kapat</button></>)}
+          {rebuildModal.done && (<><p className="text-sm text-emerald-700 mb-4">Tamamlandı. {rebuildModal.expCount} gider işlendi, {rebuildModal.count} ödeme kaydı oluşturuldu.</p><button onClick={() => setRebuildModal(null)} className="w-full bg-black text-white py-3 rounded-xl font-semibold">Kapat</button></>)}
+        </div></div>)}
         {scanModal && (<div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 z-50 overflow-y-auto"><div className="rounded-2xl p-6 w-full max-w-2xl my-8 max-h-[90vh] overflow-y-auto border border-white/60" style={{ background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
           <h3 className="text-xl font-bold mb-1 text-gray-900">Geçmiş Personel Ödemeleri</h3>
           <p className="text-sm text-gray-500 mb-4">Mayıs–Eylül 2026 arası, açıklamasında personel adı geçen ama personele atanmamış giderler. Mesai hariç; havale (dışarıdan gelen) dahil.</p>
